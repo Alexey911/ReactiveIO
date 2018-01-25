@@ -6,7 +6,8 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.concurrent.Flow;
+import java.util.concurrent.Flow.Publisher;
+import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
 
 /**
@@ -16,9 +17,9 @@ import java.util.concurrent.Flow.Subscription;
 public class LineReadingExample {
 
     public static void main(String[] args) {
-        final Path path = Paths.get("E://file2.txt");
+        final Path path = Paths.get("E://file.txt");
 
-        lines(path).subscribe(new Flow.Subscriber<>() {
+        lines(path).subscribe(new Subscriber<>() {
             @Override
             public void onSubscribe(Subscription s) {
                 s.request(3);
@@ -40,7 +41,7 @@ public class LineReadingExample {
         });
     }
 
-    private static Flow.Publisher<ByteBuffer> lines(Path path) {
+    private static Publisher<ByteBuffer> lines(Path path) {
         return new LineReader(path);
     }
 }
