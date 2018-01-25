@@ -1,7 +1,9 @@
 package com.zhytnik.reactive.io;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.file.Path;
+import java.util.concurrent.Flow.Processor;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
@@ -23,10 +25,15 @@ public class LineReader implements Publisher<ByteBuffer> {
         final InnerLineReader r = new InnerLineReader(s);
 
         s.onSubscribe(r);
-        new FileReader(path).subscribe(r);
+        final FileReader ioReader = new FileReader(path);
+
+        r.subscribe(ioReader);
+        ioReader.subscribe(r);
     }
 
-    static final class InnerLineReader implements Subscriber<ByteBuffer>, Subscription {
+    static final class InnerLineReader implements Processor<ByteBuffer, ByteBuffer>, Subscription {
+
+        private static final int PAGE_SIZE = 4096;
 
         private long lineCount;
         private boolean unboundReading;
@@ -56,6 +63,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void onNext(ByteBuffer buffer) {
+            //TODO: use slice
             int from = 0, limit = buffer.limit();
 
             for (int i = 0; i < limit && lineCount > 0; i++) {
@@ -98,6 +106,27 @@ public class LineReader implements Publisher<ByteBuffer> {
         @Override
         public void onError(Throwable e) {
             reader.onError(e);
+        }
+
+        @Override
+        public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
+            subscriber.onSubscribe(new Subscription() {
+                @Override
+                public void request(long n) {
+                }
+
+                @Override
+                public void cancel() {
+                }
+            });
+
+            final ByteBuffer buffer = ByteBuffer.allocateDirect(PAGE_SIZE);
+            buffer.order(ByteOrder.nativeOrder());
+
+            buffer.rewind();
+            buffer.limit(PAGE_SIZE);
+
+            subscriber.onNext(buffer);
         }
     }
 }
