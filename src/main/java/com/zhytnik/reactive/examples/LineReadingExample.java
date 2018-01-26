@@ -32,7 +32,7 @@ public class LineReadingExample {
 
             @Override
             public void onError(Throwable e) {
-                System.out.println("Exception occurred: " + e);
+                System.out.println("Exception occurred: " + e.getMessage());
             }
 
             @Override

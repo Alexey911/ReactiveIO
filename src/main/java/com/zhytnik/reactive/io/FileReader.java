@@ -5,150 +5,91 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
-import java.util.concurrent.Flow.Processor;
+import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 /**
  * @author Alexey Zhytnik
  * @since 24.01.2018
  */
-class FileReader implements Processor<ByteBuffer, ByteBuffer> {
+class FileReader implements Publisher<ByteBuffer> {
 
     private final Path path;
+    private final MemoryAllocator allocator;
 
-    private Allocator allocator;
-
-    public FileReader(Path path) {
+    public FileReader(Path path, MemoryAllocator allocator) {
         this.path = path;
+        this.allocator = allocator;
     }
 
     @Override
-    public void subscribe(Subscriber<? super ByteBuffer> s) {
-        if (allocator == null) {
-            s.onError(new IllegalStateException());
-            return;
-        }
+    public void subscribe(Subscriber<? super ByteBuffer> reader) {
+        try (final ReadRequest r = new ReadRequest(path, reader)) {
+            reader.onSubscribe(r);
 
-        final ReadRequest request = new ReadRequest();
-        s.onSubscribe(request);
+            while (!r.isDone()) {
+                ByteBuffer memory = allocator.get();
+                int progress = r.resource.read(memory, r.position());
 
-        try (InnerReader reader = new InnerReader(path, request, allocator::allocate)) {
-            reader.read(s::onNext);
-        } catch (IOException e) {
-            request.fail();
-            s.onError(e);
-        }
-
-        if (request.isSuccessful()) {
-            s.onComplete();
+                reader.onNext(memory);
+                r.update(progress);
+            }
+        } catch (IOException error) {
+            reader.onError(error);
         }
     }
 
-    @Override
-    public void onSubscribe(Subscription memoryProvider) {
-        allocator = new Allocator(memoryProvider);
-    }
+    private static final class ReadRequest implements Subscription, Closeable {
 
-    @Override
-    public void onNext(ByteBuffer buffer) {
-        allocator.release(buffer);
-    }
+        private long limit;
+        private long position;
+        private boolean interrupted;
 
-    @Override
-    public void onError(Throwable e) {
-    }
+        private final long max;
+        private final FileChannel resource;
+        private final Subscriber subscriber;
 
-    @Override
-    public void onComplete() {
-    }
-
-    static final class InnerReader implements Closeable {
-
-        private final FileChannel channel;
-        private final ReadRequest request;
-        private final Supplier<ByteBuffer> allocator;
-
-        public InnerReader(Path path,
-                           ReadRequest request,
-                           Supplier<ByteBuffer> allocator) throws IOException {
-            this.request = request;
-            this.allocator = allocator;
-            this.channel = FileChannel.open(path);
+        public ReadRequest(Path path, Subscriber subscriber) throws IOException {
+            this.resource = FileChannel.open(path);
+            this.max = resource.size();
+            this.subscriber = subscriber;
         }
 
-        public void read(Consumer<ByteBuffer> reader) throws IOException {
-            long pos = 0L, max = channel.size();
+        public boolean isDone() {
+            return interrupted || position == limit;
+        }
 
-            while (pos < max && request.size > 0 && !request.canceled) {
-                final ByteBuffer memory = allocator.get();
-                int offset = Math.max(channel.read(memory, pos), 0);
+        public long position() {
+            return position;
+        }
 
-                pos += offset;
-                request.size -= offset;
+        public void update(int progress) {
+            position += Math.max(progress, 0);
+        }
 
-                reader.accept(memory);
+        @Override
+        public void request(long byteCount) {
+            if (byteCount == Long.MAX_VALUE || limit + byteCount <= max) {
+                limit = Math.min(limit + byteCount, max);
+            } else {
+                interrupted = true;
+                subscriber.onError(new IllegalArgumentException("The file contains only " + max));
             }
         }
 
         @Override
-        public void close() throws IOException {
-            channel.close();
-        }
-    }
-
-    private static final class ReadRequest implements Subscription {
-
-        private long size;
-
-        private boolean failed;
-        private boolean canceled;
-        private boolean unbounded;
-
-        @Override
-        public void request(long byteCount) {
-            this.size += byteCount;
-            this.unbounded = (Long.MAX_VALUE == byteCount); //TODO
-        }
-
-        @Override
         public void cancel() {
-            this.canceled = true;
+            interrupted = true;
         }
 
-        public void fail() {
-            this.failed = true;
-        }
+        @Override
+        public void close() throws IOException {
+            resource.close();
 
-        public boolean isSuccessful() {
-            return !failed && !canceled;
-        }
-    }
-
-    private static final class Allocator {
-
-        private ByteBuffer freeMemory;
-        private final Subscription provider;
-
-        public Allocator(Subscription provider) {
-            this.provider = provider;
-        }
-
-        public ByteBuffer allocate() {
-            provider.request(1);
-            return getExclusive();
-        }
-
-        private ByteBuffer getExclusive() {
-            ByteBuffer memory = freeMemory;
-            freeMemory = null;
-            return memory;
-        }
-
-        public void release(ByteBuffer memory) {
-            freeMemory = memory;
+            if (!interrupted && position == limit) {
+                subscriber.onComplete();
+            }
         }
     }
 }

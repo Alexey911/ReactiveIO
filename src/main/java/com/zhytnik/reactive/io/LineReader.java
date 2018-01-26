@@ -26,15 +26,17 @@ public class LineReader implements Publisher<ByteBuffer> {
         s.onSubscribe(subscription);
 
         final LineParser parser = new LineParser(s, subscription);
-        final FileReader reader = new FileReader(path);
 
-        parser.subscribe(reader);
+        final MemoryAllocator allocator = new MemoryAllocator();
+        parser.subscribe(allocator);
+
+        final FileReader reader = new FileReader(path, allocator);
         reader.subscribe(parser);
     }
 
     static final class LineParser implements Processor<ByteBuffer, ByteBuffer> {
 
-        private static final int PAGE_SIZE = 8;
+        private static final int PAGE_SIZE = 4096;
 
         private Runnable ioInterrupter;
         private final LineReadingSubscription subscription;
