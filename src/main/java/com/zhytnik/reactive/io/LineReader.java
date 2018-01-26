@@ -22,37 +22,28 @@ public class LineReader implements Publisher<ByteBuffer> {
 
     @Override
     public void subscribe(Subscriber<? super ByteBuffer> s) {
-        final InnerLineReader r = new InnerLineReader(s);
+        final LineReadingSubscription subscription = new LineReadingSubscription();
+        s.onSubscribe(subscription);
 
-        s.onSubscribe(r);
-        final FileReader ioReader = new FileReader(path);
+        final LineParser parser = new LineParser(s, subscription);
+        final FileReader reader = new FileReader(path);
 
-        r.subscribe(ioReader);
-        ioReader.subscribe(r);
+        parser.subscribe(reader);
+        reader.subscribe(parser);
     }
 
-    static final class InnerLineReader implements Processor<ByteBuffer, ByteBuffer>, Subscription {
+    static final class LineParser implements Processor<ByteBuffer, ByteBuffer> {
 
-        private static final int PAGE_SIZE = 4096;
+        private static final int PAGE_SIZE = 8;
 
-        private long lineCount;
-        private boolean unboundReading;
         private Runnable ioInterrupter;
+        private final LineReadingSubscription subscription;
         private final Subscriber<? super ByteBuffer> reader;
 
-        public InnerLineReader(Subscriber<? super ByteBuffer> reader) {
+        public LineParser(Subscriber<? super ByteBuffer> reader,
+                          LineReadingSubscription subscription) {
             this.reader = reader;
-        }
-
-        @Override
-        public void request(long lineCount) {
-            this.lineCount = lineCount;
-            this.unboundReading = (lineCount == Long.MAX_VALUE);
-        }
-
-        @Override
-        public void cancel() {
-            lineCount = 0;
+            this.subscription = subscription;
         }
 
         @Override
@@ -66,7 +57,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             //TODO: use slice
             int from = 0, limit = buffer.limit();
 
-            for (int i = 0; i < limit && lineCount > 0; i++) {
+            for (int i = 0; i < limit && subscription.lineCount > 0; i++) {
                 final int c = buffer.get(i);
 
                 if (c == '\r' || c == '\n') {
@@ -74,7 +65,7 @@ public class LineReader implements Publisher<ByteBuffer> {
                     buffer.limit(i);
 
                     reader.onNext(buffer);
-                    lineCount--;
+                    subscription.lineCount--;
                     buffer.limit(limit);
 
                     if (c == '\r' && i + 1 < limit && buffer.get(i + 1) == '\n') {
@@ -84,19 +75,19 @@ public class LineReader implements Publisher<ByteBuffer> {
                 }
             }
 
-            if (from < limit && lineCount-- >= 0) {
+            if (from < limit && subscription.lineCount-- >= 0) {
                 buffer.position(from);
                 reader.onNext(buffer);
             }
 
-            if (lineCount <= 0) {
+            if (subscription.lineCount <= 0) {
                 ioInterrupter.run();
             }
         }
 
         @Override
         public void onComplete() {
-            if (unboundReading || lineCount <= 0) {
+            if (subscription.unbounded || subscription.lineCount <= 0) {
                 reader.onComplete();
             } else {
                 reader.onError(new RuntimeException("There's no more line for reading!"));
@@ -113,20 +104,36 @@ public class LineReader implements Publisher<ByteBuffer> {
             subscriber.onSubscribe(new Subscription() {
                 @Override
                 public void request(long n) {
+                    final ByteBuffer buffer = ByteBuffer.allocateDirect(PAGE_SIZE);
+                    buffer.order(ByteOrder.nativeOrder());
+
+                    buffer.rewind();
+                    buffer.limit(PAGE_SIZE);
+
+                    subscriber.onNext(buffer);
                 }
 
                 @Override
                 public void cancel() {
                 }
             });
+        }
+    }
 
-            final ByteBuffer buffer = ByteBuffer.allocateDirect(PAGE_SIZE);
-            buffer.order(ByteOrder.nativeOrder());
+    static final class LineReadingSubscription implements Subscription {
 
-            buffer.rewind();
-            buffer.limit(PAGE_SIZE);
+        private long lineCount;
+        private boolean unbounded;
 
-            subscriber.onNext(buffer);
+        @Override
+        public void request(long lineCount) {
+            this.lineCount += lineCount;
+            this.unbounded = (lineCount == Long.MAX_VALUE);
+        }
+
+        @Override
+        public void cancel() {
+            this.lineCount = 0;
         }
     }
 }

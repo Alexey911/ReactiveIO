@@ -5,11 +5,11 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
-import java.util.concurrent.Callable;
 import java.util.concurrent.Flow.Processor;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * @author Alexey Zhytnik
@@ -18,7 +18,8 @@ import java.util.function.Consumer;
 class FileReader implements Processor<ByteBuffer, ByteBuffer> {
 
     private final Path path;
-    private ByteBuffer buffer;
+
+    private Allocator allocator;
 
     public FileReader(Path path) {
         this.path = path;
@@ -26,29 +27,34 @@ class FileReader implements Processor<ByteBuffer, ByteBuffer> {
 
     @Override
     public void subscribe(Subscriber<? super ByteBuffer> s) {
-        boolean failed = false;
-
-        try (InnerChannelReader r = new InnerChannelReader(path, this::getBuffer)) {
-            s.onSubscribe(r);
-            r.read(s::onNext);
-        } catch (Exception e) {
-            s.onError(e);
-            failed = true;
+        if (allocator == null) {
+            s.onError(new IllegalStateException());
+            return;
         }
 
-        if (!failed) {
+        final ReadRequest request = new ReadRequest();
+        s.onSubscribe(request);
+
+        try (InnerReader reader = new InnerReader(path, request, allocator::allocate)) {
+            reader.read(s::onNext);
+        } catch (IOException e) {
+            request.fail();
+            s.onError(e);
+        }
+
+        if (request.isSuccessful()) {
             s.onComplete();
         }
     }
 
     @Override
-    public void onSubscribe(Subscription s) {
-        s.request(1);
+    public void onSubscribe(Subscription memoryProvider) {
+        allocator = new Allocator(memoryProvider);
     }
 
     @Override
     public void onNext(ByteBuffer buffer) {
-        this.buffer = buffer;
+        allocator.release(buffer);
     }
 
     @Override
@@ -59,47 +65,90 @@ class FileReader implements Processor<ByteBuffer, ByteBuffer> {
     public void onComplete() {
     }
 
-    private ByteBuffer getBuffer() {
-        return buffer;
-    }
-
-    static final class InnerChannelReader implements Subscription, Closeable {
+    static final class InnerReader implements Closeable {
 
         private final FileChannel channel;
+        private final ReadRequest request;
+        private final Supplier<ByteBuffer> allocator;
 
-        private boolean canceled;
-
-        private final Callable<ByteBuffer> bufferFactory;
-
-        public InnerChannelReader(Path path, Callable<ByteBuffer> bufferFactory) throws IOException {
+        public InnerReader(Path path,
+                           ReadRequest request,
+                           Supplier<ByteBuffer> allocator) throws IOException {
+            this.request = request;
+            this.allocator = allocator;
             this.channel = FileChannel.open(path);
-            this.bufferFactory = bufferFactory;
         }
 
-        @Override
-        public void request(long n) {
-        }
+        public void read(Consumer<ByteBuffer> reader) throws IOException {
+            long pos = 0L, max = channel.size();
 
-        public void read(Consumer<ByteBuffer> consumer) throws Exception {
+            while (pos < max && request.size > 0 && !request.canceled) {
+                final ByteBuffer memory = allocator.get();
+                int offset = Math.max(channel.read(memory, pos), 0);
 
-            final long size = channel.size();
-            long position = 0L;
+                pos += offset;
+                request.size -= offset;
 
-            while (position < size && !canceled) {
-                final ByteBuffer buffer = bufferFactory.call();
-                position += Math.max(channel.read(buffer, position), 0);
-                consumer.accept(buffer);
+                reader.accept(memory);
             }
-        }
-
-        @Override
-        public void cancel() {
-            canceled = true;
         }
 
         @Override
         public void close() throws IOException {
             channel.close();
+        }
+    }
+
+    private static final class ReadRequest implements Subscription {
+
+        private long size;
+
+        private boolean failed;
+        private boolean canceled;
+        private boolean unbounded;
+
+        @Override
+        public void request(long byteCount) {
+            this.size += byteCount;
+            this.unbounded = (Long.MAX_VALUE == byteCount); //TODO
+        }
+
+        @Override
+        public void cancel() {
+            this.canceled = true;
+        }
+
+        public void fail() {
+            this.failed = true;
+        }
+
+        public boolean isSuccessful() {
+            return !failed && !canceled;
+        }
+    }
+
+    private static final class Allocator {
+
+        private ByteBuffer freeMemory;
+        private final Subscription provider;
+
+        public Allocator(Subscription provider) {
+            this.provider = provider;
+        }
+
+        public ByteBuffer allocate() {
+            provider.request(1);
+            return getExclusive();
+        }
+
+        private ByteBuffer getExclusive() {
+            ByteBuffer memory = freeMemory;
+            freeMemory = null;
+            return memory;
+        }
+
+        public void release(ByteBuffer memory) {
+            freeMemory = memory;
         }
     }
 }

@@ -1,6 +1,6 @@
 package com.zhytnik.reactive.io;
 
-import com.zhytnik.reactive.io.LineReader.InnerLineReader;
+import com.zhytnik.reactive.io.LineReader.LineParser;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -14,14 +14,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public class LineReaderTest {
 
-    InnerLineReader reader;
+    LineParser reader;
     TestSubscriber subscriber;
 
     @Before
     public void setUp() {
         subscriber = new TestSubscriber();
-        reader = new InnerLineReader(subscriber);
-        reader.request(Long.MAX_VALUE);
+
+        final LineReader.LineReadingSubscription s = new LineReader.LineReadingSubscription();
+        s.request(Long.MAX_VALUE);
+
+        reader = new LineParser(subscriber, s);
         reader.onSubscribe(subscriber);
     }
 
