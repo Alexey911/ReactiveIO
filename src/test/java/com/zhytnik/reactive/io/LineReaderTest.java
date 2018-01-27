@@ -1,10 +1,10 @@
 package com.zhytnik.reactive.io;
 
-import com.zhytnik.reactive.io.LineReader.LineParser;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.nio.ByteBuffer;
+import java.util.concurrent.Flow;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public class LineReaderTest {
 
-    LineParser reader;
+    Flow.Subscriber<ByteBuffer> reader;
     TestSubscriber subscriber;
     MemoryAllocator allocator;
 
@@ -22,11 +22,11 @@ public class LineReaderTest {
     public void setUp() {
         subscriber = new TestSubscriber();
 
-        final LineReader.ParseRequest s = new LineReader.ParseRequest();
-        s.request(4);
-
-        reader = new LineParser(subscriber, s, allocator = new MemoryAllocator());
-        reader.onSubscribe(subscriber);
+//        final LineReader.ParseRequest s = new LineReader.ParseRequest();
+//        s.request(4);
+//
+//        reader = new LineParser(subscriber, s, allocator = new MemoryAllocator());
+//        reader.onSubscribe(subscriber);
     }
 
     @Test

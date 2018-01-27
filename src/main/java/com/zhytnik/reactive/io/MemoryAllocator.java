@@ -34,10 +34,15 @@ class MemoryAllocator implements Supplier<ByteBuffer> {
     }
 
     private void extend() {
-        int prev = memory.limit();
+        memory.limit(2 * memory.limit());
+    }
 
-        memory.limit(prev * 2);
-        memory.position(prev);
+    public void lock(ByteBuffer memory) {
+        memory.reset();
+    }
+
+    public void release(ByteBuffer memory) {
+        memory.position(memory.limit());
         memory.mark();
     }
 

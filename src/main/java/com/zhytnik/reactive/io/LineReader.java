@@ -1,5 +1,6 @@
 package com.zhytnik.reactive.io;
 
+import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.concurrent.Flow.Publisher;
@@ -19,48 +20,43 @@ public class LineReader implements Publisher<ByteBuffer> {
     }
 
     @Override
-    public void subscribe(Subscriber<? super ByteBuffer> printer) {
-        final ParseRequest subscription = new ParseRequest();
-        printer.onSubscribe(subscription);
-
+    public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
         final MemoryAllocator allocator = new MemoryAllocator();
-        final LineParser parser = new LineParser(printer, subscription, allocator);
+
+        final ParseRequest r = new ParseRequest(allocator, subscriber);
+        subscriber.onSubscribe(r);
+
         final FileReader reader = new FileReader(path, allocator);
+        final LineParser parser = new LineParser(r);
+        parser.allocator = allocator;
 
         reader.subscribe(parser);
     }
 
-    static final class LineParser implements Subscriber<ByteBuffer> {
+    private static final class LineParser implements Subscriber<ByteBuffer> {
 
-        private Runnable ioInterrupter;
-        private final ParseRequest parse;
-        private final Subscriber<? super ByteBuffer> reader;
+        private final ParseRequest request;
 
-        private final MemoryAllocator memory;
+        private MemoryAllocator allocator;
 
-        public LineParser(Subscriber<? super ByteBuffer> reader,
-                          ParseRequest parse,
-                          MemoryAllocator memory) {
-            this.reader = reader;
-            this.memory = memory;
-            this.parse = parse;
+        int lineFrom;
+        boolean skip;
+
+        LineParser(ParseRequest request) {
+            this.request = request;
         }
 
         @Override
-        public void onSubscribe(Subscription fileReader) {
-            fileReader.request(Long.MAX_VALUE);
-            ioInterrupter = fileReader::cancel;
+        public void onSubscribe(Subscription reader) {
+            reader.request(Long.MAX_VALUE);
+            request.setInterrupter(reader::cancel);
         }
-
-        int lineFrom = 0;
-        boolean skip = false;
 
         @Override
         public void onNext(ByteBuffer buffer) {
-            buffer.limit(buffer.position());
-            buffer.reset();
+            allocator.lock(buffer);
 
-            for (int i = buffer.position(), limit = buffer.limit(); i < limit && !parse.isDone(); i++) {
+            for (int i = buffer.position(), max = buffer.limit(); !request.isDone() && i < max; i++) {
                 final char c = (char) buffer.get(i);
 
                 if (c == '\r' || c == '\n') {
@@ -76,44 +72,47 @@ public class LineReader implements Publisher<ByteBuffer> {
                     buffer.limit(i);
                     buffer.position(lineFrom);
 
-                    reader.onNext(buffer);
-                    parse.decrease();
-                    lineFrom = i + 1;
+                    request.accept(buffer);
 
-                    buffer.limit(limit);
+                    lineFrom = i + 1;
+                    buffer.limit(max);
                 }
             }
 
-            if (parse.isDone()) {
-                ioInterrupter.run();
-            }
+            allocator.release(buffer);
         }
 
         @Override
         public void onComplete() {
-            if (!parse.interrupted && !parse.isDone() && lineFrom < memory.getLastReleased().limit()) {
-                memory.getLastReleased().position(lineFrom);
-                reader.onNext(memory.getLastReleased());
-                parse.decrease();
+            if (!request.interrupted && !request.isDone() && lineFrom < request.allocator.getLastReleased().limit()) {
+                request.allocator.getLastReleased().position(lineFrom);
+                request.accept(request.allocator.getLastReleased());
             }
 
-            if (parse.isDone() && !parse.interrupted) {
-                reader.onComplete();
-            } else {
-                reader.onError(new RuntimeException("There's no more line for reading!"));
-            }
+            request.close();
         }
 
         @Override
         public void onError(Throwable e) {
-            reader.onError(e);
+            request.fail(e);
         }
     }
 
-    static final class ParseRequest implements Subscription {
+    private static final class ParseRequest implements Subscription, Closeable {
 
         private long lines;
         private boolean interrupted;
+
+        private Runnable readInterrupter;
+
+        private final MemoryAllocator allocator;
+        private final Subscriber<? super ByteBuffer> subscriber;
+
+        ParseRequest(MemoryAllocator allocator,
+                     Subscriber<? super ByteBuffer> subscriber) {
+            this.allocator = allocator;
+            this.subscriber = subscriber;
+        }
 
         @Override
         public void request(long lines) {
@@ -129,8 +128,35 @@ public class LineReader implements Publisher<ByteBuffer> {
             return interrupted || lines == 0;
         }
 
+        public void fail(Throwable error) {
+            subscriber.onError(error);
+        }
+
+        private void accept(ByteBuffer memory) {
+            subscriber.onNext(memory);
+            decrease();
+        }
+
         private void decrease() {
             this.lines--;
+
+            if (lines == 0 && readInterrupter != null) {
+                readInterrupter.run();
+                readInterrupter = null;
+            }
+        }
+
+        private void setInterrupter(Runnable on) {
+            this.readInterrupter = on;
+        }
+
+        @Override
+        public void close() {
+            if (!interrupted && lines == 0) {
+                subscriber.onComplete();
+            } else {
+                subscriber.onError(new RuntimeException("There's no more line for reading!"));
+            }
         }
     }
 }

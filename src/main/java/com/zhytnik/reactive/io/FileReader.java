@@ -32,6 +32,7 @@ class FileReader implements Publisher<ByteBuffer> {
             while (!r.isDone()) {
                 ByteBuffer memory = allocator.get();
                 int progress = r.resource.read(memory, r.position());
+                memory.limit(memory.position());
 
                 reader.onNext(memory);
                 r.update(progress);
