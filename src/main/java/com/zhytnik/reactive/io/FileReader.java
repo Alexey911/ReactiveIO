@@ -70,12 +70,12 @@ class FileReader implements Publisher<ByteBuffer> {
         }
 
         @Override
-        public void request(long byteCount) {
-            if (byteCount == Long.MAX_VALUE || limit + byteCount <= max) {
-                limit = Math.min(limit + byteCount, max);
+        public void request(long bytes) {
+            if (bytes == Long.MAX_VALUE || limit + bytes <= max) {
+                limit = Math.min(limit + bytes, max);
             } else {
                 interrupted = true;
-                subscriber.onError(new IllegalArgumentException("The file contains only " + max));
+                subscriber.onError(new IllegalArgumentException("The resource contains only " + max + " bytes"));
             }
         }
 

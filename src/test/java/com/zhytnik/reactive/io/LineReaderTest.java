@@ -21,10 +21,10 @@ public class LineReaderTest {
     public void setUp() {
         subscriber = new TestSubscriber();
 
-        final LineReader.LineReadingSubscription s = new LineReader.LineReadingSubscription();
+        final LineReader.ParseRequest s = new LineReader.ParseRequest();
         s.request(Long.MAX_VALUE);
 
-        reader = new LineParser(subscriber, s);
+        reader = new LineParser(subscriber, s, null);
         reader.onSubscribe(subscriber);
     }
 

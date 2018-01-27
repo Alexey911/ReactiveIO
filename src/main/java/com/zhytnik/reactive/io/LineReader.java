@@ -3,7 +3,6 @@ package com.zhytnik.reactive.io;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Path;
-import java.util.concurrent.Flow.Processor;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
@@ -21,75 +20,90 @@ public class LineReader implements Publisher<ByteBuffer> {
     }
 
     @Override
-    public void subscribe(Subscriber<? super ByteBuffer> s) {
-        final LineReadingSubscription subscription = new LineReadingSubscription();
-        s.onSubscribe(subscription);
+    public void subscribe(Subscriber<? super ByteBuffer> printer) {
+        final ParseRequest subscription = new ParseRequest();
+        printer.onSubscribe(subscription);
 
-        final LineParser parser = new LineParser(s, subscription);
-
+        final Memory memory = new Memory();
         final MemoryAllocator allocator = new MemoryAllocator();
-        parser.subscribe(allocator);
+        memory.subscribe(allocator);
+
+        final LineParser parser = new LineParser(printer, subscription, memory);
 
         final FileReader reader = new FileReader(path, allocator);
         reader.subscribe(parser);
     }
 
-    static final class LineParser implements Processor<ByteBuffer, ByteBuffer> {
-
-        private static final int PAGE_SIZE = 4096;
+    static final class LineParser implements Subscriber<ByteBuffer> {
 
         private Runnable ioInterrupter;
-        private final LineReadingSubscription subscription;
+        private final ParseRequest parse;
         private final Subscriber<? super ByteBuffer> reader;
 
+        private final Memory memory;
+
         public LineParser(Subscriber<? super ByteBuffer> reader,
-                          LineReadingSubscription subscription) {
+                          ParseRequest parse,
+                          Memory memory) {
             this.reader = reader;
-            this.subscription = subscription;
+            this.memory = memory;
+            this.parse = parse;
         }
 
         @Override
-        public void onSubscribe(Subscription s) {
-            s.request(Long.MAX_VALUE);
-            ioInterrupter = s::cancel;
+        public void onSubscribe(Subscription fileReader) {
+            fileReader.request(Long.MAX_VALUE);
+            ioInterrupter = fileReader::cancel;
         }
+
+        int lineFrom = 0, readFrom = 0;
+        boolean skip = false;
 
         @Override
         public void onNext(ByteBuffer buffer) {
-            //TODO: use slice
-            int from = 0, limit = buffer.limit();
+            buffer.limit(buffer.position());
 
-            for (int i = 0; i < limit && subscription.lineCount > 0; i++) {
-                final int c = buffer.get(i);
+            for (int i = readFrom, limit = buffer.limit(); i < limit && !parse.isDone(); i++) {
+                final char c = (char) buffer.get(i);
 
                 if (c == '\r' || c == '\n') {
-                    buffer.position(from);
+
+                    if (c == '\r') {
+                        skip = true;
+                    } else if (skip) {
+                        lineFrom = i + 1;
+                        skip = false;
+                        continue;
+                    }
+
+                    buffer.position(lineFrom);
                     buffer.limit(i);
 
                     reader.onNext(buffer);
-                    subscription.lineCount--;
-                    buffer.limit(limit);
+                    parse.decrease();
 
-                    if (c == '\r' && i + 1 < limit && buffer.get(i + 1) == '\n') {
-                        i++;
-                    }
-                    from = i + 1;
+                    lineFrom = i + 1;
+                    buffer.limit(limit);
                 }
             }
 
-            if (from < limit && subscription.lineCount-- >= 0) {
-                buffer.position(from);
-                reader.onNext(buffer);
-            }
-
-            if (subscription.lineCount <= 0) {
+            if (parse.isDone()) {
                 ioInterrupter.run();
+            } else {
+                readFrom = memory.extend(buffer);
             }
         }
 
         @Override
         public void onComplete() {
-            if (subscription.unbounded || subscription.lineCount <= 0) {
+            if (!skip && lineFrom < readFrom && !parse.isDone()) {
+                memory.memory.limit(memory.memory.position());
+                memory.memory.position(lineFrom);
+                reader.onNext(memory.memory);
+                parse.decrease();
+            }
+
+            if (parse.isDone()) {
                 reader.onComplete();
             } else {
                 reader.onError(new RuntimeException("There's no more line for reading!"));
@@ -100,42 +114,79 @@ public class LineReader implements Publisher<ByteBuffer> {
         public void onError(Throwable e) {
             reader.onError(e);
         }
-
-        @Override
-        public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
-            subscriber.onSubscribe(new Subscription() {
-                @Override
-                public void request(long n) {
-                    final ByteBuffer buffer = ByteBuffer.allocateDirect(PAGE_SIZE);
-                    buffer.order(ByteOrder.nativeOrder());
-
-                    buffer.rewind();
-                    buffer.limit(PAGE_SIZE);
-
-                    subscriber.onNext(buffer);
-                }
-
-                @Override
-                public void cancel() {
-                }
-            });
-        }
     }
 
-    static final class LineReadingSubscription implements Subscription {
+    static final class Memory implements Publisher<ByteBuffer>, Subscription {
 
-        private long lineCount;
-        private boolean unbounded;
+        private static final int PAGE_SIZE = 3;
+
+        private Subscriber<? super ByteBuffer> allocator;
+
+        private ByteBuffer memory;
+
+        int readFrom = 0;
 
         @Override
-        public void request(long lineCount) {
-            this.lineCount += lineCount;
-            this.unbounded = (lineCount == Long.MAX_VALUE);
+        public void subscribe(Subscriber<? super ByteBuffer> allocator) {
+            this.allocator = allocator;
+            this.allocator.onSubscribe(this);
+        }
+
+        public ByteBuffer allocate() {
+            final ByteBuffer memory = ByteBuffer.allocateDirect(10 * PAGE_SIZE);
+            memory.order(ByteOrder.nativeOrder());
+            memory.limit(PAGE_SIZE);
+
+            return this.memory = memory;
+        }
+
+        private int extend(ByteBuffer memory) {
+            int prev = memory.limit();
+
+            memory.limit(prev * 2);
+            memory.position(prev);
+
+            return prev;
+        }
+
+        @Override
+        public void request(long memoryRequest) {
+            try {
+                if (memory == null) allocate();
+
+
+
+                allocator.onNext(memory);
+            } catch (Exception memoryError) {
+                allocator.onError(memoryError);
+            }
         }
 
         @Override
         public void cancel() {
-            this.lineCount = 0;
+
+        }
+    }
+
+    static final class ParseRequest implements Subscription {
+
+        private long lines;
+
+        @Override
+        public void request(long lines) {
+            this.lines += lines;
+        }
+
+        @Override
+        public void cancel() {
+        }
+
+        private boolean isDone() {
+            return lines <= 0;
+        }
+
+        private void decrease() {
+            this.lines--;
         }
     }
 }
