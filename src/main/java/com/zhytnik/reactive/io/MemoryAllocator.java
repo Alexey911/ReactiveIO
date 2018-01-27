@@ -44,4 +44,8 @@ class MemoryAllocator implements Supplier<ByteBuffer> {
     public ByteBuffer getLastReleased() {
         return memory;
     }
+
+    void setMemory(ByteBuffer memory) {
+        this.memory = memory;
+    }
 }

@@ -91,7 +91,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void onComplete() {
-            if (!skip && lineFrom < memory.getLastReleased().limit() && !parse.isDone()) {
+            if (!parse.isDone() && lineFrom < memory.getLastReleased().limit()) {
                 memory.getLastReleased().position(lineFrom);
                 reader.onNext(memory.getLastReleased());
                 parse.decrease();
