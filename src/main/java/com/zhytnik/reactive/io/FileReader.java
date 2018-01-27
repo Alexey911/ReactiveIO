@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
+import java.util.function.Supplier;
 
 /**
  * @author Alexey Zhytnik
@@ -16,9 +17,9 @@ import java.util.concurrent.Flow.Subscription;
 class FileReader implements Publisher<ByteBuffer> {
 
     private final Path path;
-    private final MemoryAllocator allocator;
+    private final Supplier<ByteBuffer> allocator;
 
-    public FileReader(Path path, MemoryAllocator allocator) {
+    FileReader(Path path, Supplier<ByteBuffer> allocator) {
         this.path = path;
         this.allocator = allocator;
     }
@@ -35,7 +36,7 @@ class FileReader implements Publisher<ByteBuffer> {
                 reader.onNext(memory);
                 r.update(progress);
             }
-        } catch (IOException error) {
+        } catch (Exception error) {
             reader.onError(error);
         }
     }
@@ -50,21 +51,21 @@ class FileReader implements Publisher<ByteBuffer> {
         private final FileChannel resource;
         private final Subscriber subscriber;
 
-        public ReadRequest(Path path, Subscriber subscriber) throws IOException {
+        private ReadRequest(Path path, Subscriber subscriber) throws IOException {
             this.resource = FileChannel.open(path);
             this.max = resource.size();
             this.subscriber = subscriber;
         }
 
-        public boolean isDone() {
+        private boolean isDone() {
             return interrupted || position == limit;
         }
 
-        public long position() {
+        private long position() {
             return position;
         }
 
-        public void update(int progress) {
+        private void update(int progress) {
             position += Math.max(progress, 0);
         }
 
@@ -87,7 +88,7 @@ class FileReader implements Publisher<ByteBuffer> {
         public void close() throws IOException {
             resource.close();
 
-            if (!interrupted && position == limit) {
+            if (!interrupted && limit > 0 && position == limit) {
                 subscriber.onComplete();
             }
         }
