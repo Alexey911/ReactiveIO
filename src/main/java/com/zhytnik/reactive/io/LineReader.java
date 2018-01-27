@@ -56,14 +56,14 @@ public class LineReader implements Publisher<ByteBuffer> {
             ioInterrupter = fileReader::cancel;
         }
 
-        int lineFrom = 0, readFrom = 0;
+        int lineFrom = 0;
         boolean skip = false;
 
         @Override
         public void onNext(ByteBuffer buffer) {
             buffer.limit(buffer.position());
 
-            for (int i = readFrom, limit = buffer.limit(); i < limit && !parse.isDone(); i++) {
+            for (int i = memory.readFrom, limit = buffer.limit(); i < limit && !parse.isDone(); i++) {
                 final char c = (char) buffer.get(i);
 
                 if (c == '\r' || c == '\n') {
@@ -89,14 +89,12 @@ public class LineReader implements Publisher<ByteBuffer> {
 
             if (parse.isDone()) {
                 ioInterrupter.run();
-            } else {
-                readFrom = memory.extend(buffer);
             }
         }
 
         @Override
         public void onComplete() {
-            if (!skip && lineFrom < readFrom && !parse.isDone()) {
+            if (!skip && lineFrom < memory.memory.limit() && !parse.isDone()) {
                 memory.memory.limit(memory.memory.position());
                 memory.memory.position(lineFrom);
                 reader.onNext(memory.memory);
@@ -152,10 +150,11 @@ public class LineReader implements Publisher<ByteBuffer> {
         @Override
         public void request(long memoryRequest) {
             try {
-                if (memory == null) allocate();
-
-
-
+                if (memory == null) {
+                    allocate();
+                } else {
+                    readFrom = extend(memory);
+                }
                 allocator.onNext(memory);
             } catch (Exception memoryError) {
                 allocator.onError(memoryError);
