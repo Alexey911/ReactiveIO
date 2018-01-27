@@ -62,8 +62,9 @@ public class LineReader implements Publisher<ByteBuffer> {
         @Override
         public void onNext(ByteBuffer buffer) {
             buffer.limit(buffer.position());
+            buffer.reset();
 
-            for (int i = memory.readFrom, limit = buffer.limit(); i < limit && !parse.isDone(); i++) {
+            for (int i = buffer.position(), limit = buffer.limit(); i < limit && !parse.isDone(); i++) {
                 final char c = (char) buffer.get(i);
 
                 if (c == '\r' || c == '\n') {
@@ -95,7 +96,6 @@ public class LineReader implements Publisher<ByteBuffer> {
         @Override
         public void onComplete() {
             if (!skip && lineFrom < memory.memory.limit() && !parse.isDone()) {
-                memory.memory.limit(memory.memory.position());
                 memory.memory.position(lineFrom);
                 reader.onNext(memory.memory);
                 parse.decrease();
@@ -122,8 +122,6 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         private ByteBuffer memory;
 
-        int readFrom = 0;
-
         @Override
         public void subscribe(Subscriber<? super ByteBuffer> allocator) {
             this.allocator = allocator;
@@ -134,17 +132,17 @@ public class LineReader implements Publisher<ByteBuffer> {
             final ByteBuffer memory = ByteBuffer.allocateDirect(10 * PAGE_SIZE);
             memory.order(ByteOrder.nativeOrder());
             memory.limit(PAGE_SIZE);
+            memory.mark();
 
             return this.memory = memory;
         }
 
-        private int extend(ByteBuffer memory) {
+        private void extend(ByteBuffer memory) {
             int prev = memory.limit();
 
             memory.limit(prev * 2);
             memory.position(prev);
-
-            return prev;
+            memory.mark();
         }
 
         @Override
@@ -153,7 +151,7 @@ public class LineReader implements Publisher<ByteBuffer> {
                 if (memory == null) {
                     allocate();
                 } else {
-                    readFrom = extend(memory);
+                    extend(memory);
                 }
                 allocator.onNext(memory);
             } catch (Exception memoryError) {
