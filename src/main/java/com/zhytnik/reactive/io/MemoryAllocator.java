@@ -1,49 +1,47 @@
 package com.zhytnik.reactive.io;
 
 import java.nio.ByteBuffer;
-import java.util.concurrent.Flow.Subscriber;
-import java.util.concurrent.Flow.Subscription;
+import java.nio.ByteOrder;
 import java.util.function.Supplier;
 
 /**
  * @author Alexey Zhytnik
- * @since 26-Jan-18
+ * @since 27-Jan-18
  */
-class MemoryAllocator implements Subscriber<ByteBuffer>, Supplier<ByteBuffer> {
+class MemoryAllocator implements Supplier<ByteBuffer> {
 
-    private ByteBuffer freeMemory;
-    private Subscription memoryProvider;
+    private static final int PAGE_SIZE = 3;
 
-    @Override
-    public void onSubscribe(Subscription memoryProvider) {
-        this.memoryProvider = memoryProvider;
-    }
-
-    @Override
-    public void onNext(ByteBuffer memory) {
-        freeMemory = memory;
-    }
-
-    @Override
-    public void onError(Throwable memoryError) {
-        throw new RuntimeException(memoryError);
-    }
-
-    @Override
-    public void onComplete() {
-        freeMemory = null;
-        memoryProvider = null;
-    }
+    private ByteBuffer memory;
 
     @Override
     public ByteBuffer get() {
-        memoryProvider.request(1);
-        return getExclusive();
+        if (memory == null) {
+            allocate();
+        } else {
+            extend();
+        }
+        return memory;
     }
 
-    private ByteBuffer getExclusive() {
-        ByteBuffer memory = freeMemory;
-        freeMemory = null;
+    private void allocate() {
+        final ByteBuffer memory = ByteBuffer.allocateDirect(10 * PAGE_SIZE);
+        memory.order(ByteOrder.nativeOrder());
+        memory.limit(PAGE_SIZE);
+        memory.mark();
+
+        this.memory = memory;
+    }
+
+    private void extend() {
+        int prev = memory.limit();
+
+        memory.limit(prev * 2);
+        memory.position(prev);
+        memory.mark();
+    }
+
+    public ByteBuffer getLastReleased() {
         return memory;
     }
 }

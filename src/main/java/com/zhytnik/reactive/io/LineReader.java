@@ -1,7 +1,6 @@
 package com.zhytnik.reactive.io;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.file.Path;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
@@ -24,13 +23,10 @@ public class LineReader implements Publisher<ByteBuffer> {
         final ParseRequest subscription = new ParseRequest();
         printer.onSubscribe(subscription);
 
-        final Memory memory = new Memory();
         final MemoryAllocator allocator = new MemoryAllocator();
-        memory.subscribe(allocator);
-
-        final LineParser parser = new LineParser(printer, subscription, memory);
-
+        final LineParser parser = new LineParser(printer, subscription, allocator);
         final FileReader reader = new FileReader(path, allocator);
+
         reader.subscribe(parser);
     }
 
@@ -40,11 +36,11 @@ public class LineReader implements Publisher<ByteBuffer> {
         private final ParseRequest parse;
         private final Subscriber<? super ByteBuffer> reader;
 
-        private final Memory memory;
+        private final MemoryAllocator memory;
 
         public LineParser(Subscriber<? super ByteBuffer> reader,
                           ParseRequest parse,
-                          Memory memory) {
+                          MemoryAllocator memory) {
             this.reader = reader;
             this.memory = memory;
             this.parse = parse;
@@ -77,13 +73,13 @@ public class LineReader implements Publisher<ByteBuffer> {
                         continue;
                     }
 
-                    buffer.position(lineFrom);
                     buffer.limit(i);
+                    buffer.position(lineFrom);
 
                     reader.onNext(buffer);
                     parse.decrease();
-
                     lineFrom = i + 1;
+
                     buffer.limit(limit);
                 }
             }
@@ -95,9 +91,9 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void onComplete() {
-            if (!skip && lineFrom < memory.memory.limit() && !parse.isDone()) {
-                memory.memory.position(lineFrom);
-                reader.onNext(memory.memory);
+            if (!skip && lineFrom < memory.getLastReleased().limit() && !parse.isDone()) {
+                memory.getLastReleased().position(lineFrom);
+                reader.onNext(memory.getLastReleased());
                 parse.decrease();
             }
 
@@ -111,57 +107,6 @@ public class LineReader implements Publisher<ByteBuffer> {
         @Override
         public void onError(Throwable e) {
             reader.onError(e);
-        }
-    }
-
-    static final class Memory implements Publisher<ByteBuffer>, Subscription {
-
-        private static final int PAGE_SIZE = 3;
-
-        private Subscriber<? super ByteBuffer> allocator;
-
-        private ByteBuffer memory;
-
-        @Override
-        public void subscribe(Subscriber<? super ByteBuffer> allocator) {
-            this.allocator = allocator;
-            this.allocator.onSubscribe(this);
-        }
-
-        public ByteBuffer allocate() {
-            final ByteBuffer memory = ByteBuffer.allocateDirect(10 * PAGE_SIZE);
-            memory.order(ByteOrder.nativeOrder());
-            memory.limit(PAGE_SIZE);
-            memory.mark();
-
-            return this.memory = memory;
-        }
-
-        private void extend(ByteBuffer memory) {
-            int prev = memory.limit();
-
-            memory.limit(prev * 2);
-            memory.position(prev);
-            memory.mark();
-        }
-
-        @Override
-        public void request(long memoryRequest) {
-            try {
-                if (memory == null) {
-                    allocate();
-                } else {
-                    extend(memory);
-                }
-                allocator.onNext(memory);
-            } catch (Exception memoryError) {
-                allocator.onError(memoryError);
-            }
-        }
-
-        @Override
-        public void cancel() {
-
         }
     }
 
