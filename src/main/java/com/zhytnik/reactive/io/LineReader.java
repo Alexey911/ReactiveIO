@@ -91,13 +91,13 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void onComplete() {
-            if (!parse.isDone() && lineFrom < memory.getLastReleased().limit()) {
+            if (!parse.interrupted && !parse.isDone() && lineFrom < memory.getLastReleased().limit()) {
                 memory.getLastReleased().position(lineFrom);
                 reader.onNext(memory.getLastReleased());
                 parse.decrease();
             }
 
-            if (parse.isDone()) {
+            if (parse.isDone() && !parse.interrupted) {
                 reader.onComplete();
             } else {
                 reader.onError(new RuntimeException("There's no more line for reading!"));
@@ -113,6 +113,7 @@ public class LineReader implements Publisher<ByteBuffer> {
     static final class ParseRequest implements Subscription {
 
         private long lines;
+        private boolean interrupted;
 
         @Override
         public void request(long lines) {
@@ -121,10 +122,11 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void cancel() {
+            interrupted = true;
         }
 
         private boolean isDone() {
-            return lines <= 0;
+            return interrupted || lines == 0;
         }
 
         private void decrease() {
