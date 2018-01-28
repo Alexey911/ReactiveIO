@@ -54,9 +54,10 @@ public class LineReader implements Publisher<ByteBuffer> {
         @Override
         public void onNext(ByteBuffer buffer) {
             int start = buffer.position();
+            int limit = buffer.limit();
             int lineStart = buffer.reset().position();
 
-            for (int i = start, max = buffer.limit(); i < max && request.isActive(); i++) {
+            for (int i = start; i < limit && request.isActive(); i++) {
                 final int c = buffer.get(i);
 
                 if (c == '\r' || c == '\n') {
@@ -72,10 +73,10 @@ public class LineReader implements Publisher<ByteBuffer> {
                     buffer.limit(i);
                     buffer.position(lineStart);
 
-                    request.send(buffer);
+                    request.send(buffer.asReadOnlyBuffer());
 
                     lineStart = i + 1;
-                    buffer.limit(max);
+                    buffer.limit(limit);
                 }
             }
 
@@ -83,18 +84,14 @@ public class LineReader implements Publisher<ByteBuffer> {
                 breaker.run();
             } else {
                 buffer.position(lineStart).mark();
-                buffer.position(buffer.limit());
-
+                buffer.position(limit);
                 lastBuffer = buffer;
             }
         }
 
         @Override
         public void onComplete() {
-            int lineStart = lastBuffer.reset().position();
-
-            if (lineStart < lastBuffer.limit()) {
-                lastBuffer.position(lineStart);
+            if (lastBuffer.reset().position() < lastBuffer.limit()) {
                 request.send(lastBuffer);
             }
         }
