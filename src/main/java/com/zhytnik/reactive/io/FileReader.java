@@ -17,11 +17,11 @@ import java.util.function.Supplier;
 class FileReader implements Publisher<ByteBuffer> {
 
     private final Path path;
-    private final Supplier<ByteBuffer> allocator;
+    private final Supplier<ByteBuffer> memory;
 
-    FileReader(Path path, Supplier<ByteBuffer> allocator) {
+    FileReader(Path path, Supplier<ByteBuffer> memory) {
         this.path = path;
-        this.allocator = allocator;
+        this.memory = memory;
     }
 
     @Override
@@ -30,13 +30,13 @@ class FileReader implements Publisher<ByteBuffer> {
             reader.onSubscribe(r);
 
             while (!r.isDone()) {
-                ByteBuffer memory = allocator.get();
-                int progress = r.resource.read(memory, r.position());
+                final ByteBuffer chunk = memory.get();
+                final int progress = r.resource.read(chunk, r.position());
 
-                memory.limit(memory.position());
-                memory.position(memory.limit() - progress);
+                chunk.limit(chunk.position());
+                chunk.position(chunk.limit() - progress);
 
-                reader.onNext(memory);
+                reader.onNext(chunk);
                 r.update(progress);
             }
         } catch (Exception error) {
@@ -54,7 +54,7 @@ class FileReader implements Publisher<ByteBuffer> {
         private final FileChannel resource;
         private final Subscriber subscriber;
 
-        private ReadRequest(Path path, Subscriber subscriber) throws IOException {
+        ReadRequest(Path path, Subscriber subscriber) throws IOException {
             this.resource = FileChannel.open(path);
             this.max = resource.size();
             this.subscriber = subscriber;

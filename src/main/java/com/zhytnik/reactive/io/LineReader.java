@@ -37,7 +37,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         private boolean ignoreLF;
         private Runnable breaker;
-        private ByteBuffer lastBuffer;
+        private ByteBuffer lastChunk;
 
         private final ParseRequest request;
 
@@ -46,19 +46,18 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         @Override
-        public void onSubscribe(Subscription read) {
-            read.request(Long.MAX_VALUE);
-            breaker = read::cancel;
+        public void onSubscribe(Subscription reader) {
+            reader.request(Long.MAX_VALUE);
+            breaker = reader::cancel;
         }
 
         @Override
-        public void onNext(ByteBuffer buffer) {
-            int limit = buffer.limit();
-            int readStart = buffer.position();
-            int lineStart = buffer.reset().position();
+        public void onNext(ByteBuffer chunk) {
+            int readStart = chunk.position();
+            int lineStart = chunk.reset().position();
 
-            for (int i = readStart; i < limit && request.isActive(); i++) {
-                final int c = buffer.get(i);
+            for (int i = readStart, max = chunk.limit(); i < max && request.isActive(); i++) {
+                final int c = chunk.get(i);
 
                 if (c == '\r' || c == '\n') {
 
@@ -70,29 +69,24 @@ public class LineReader implements Publisher<ByteBuffer> {
                         continue;
                     }
 
-                    buffer.limit(i);
-                    buffer.position(lineStart);
-
-                    request.send(buffer.asReadOnlyBuffer());
-
+                    request.send(chunk, lineStart, i);
                     lineStart = i + 1;
-                    buffer.limit(limit);
                 }
             }
 
             if (!request.isActive()) {
                 breaker.run();
             } else {
-                buffer.position(lineStart).mark();
-                buffer.position(limit);
-                lastBuffer = buffer;
+                chunk.position(lineStart).mark();
+                chunk.position(chunk.limit());
+                lastChunk = chunk;
             }
         }
 
         @Override
         public void onComplete() {
-            if (lastBuffer.reset().position() < lastBuffer.limit()) {
-                request.send(lastBuffer);
+            if (lastChunk != null && lastChunk.reset().hasRemaining()) {
+                request.send(lastChunk, lastChunk.position(), lastChunk.limit());
             }
         }
 
@@ -104,7 +98,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
     private static final class ParseRequest implements Subscription, Closeable {
 
-        private long lines;
+        private long remain;
         private boolean unbounded;
         private boolean interrupted;
 
@@ -114,27 +108,29 @@ public class LineReader implements Publisher<ByteBuffer> {
             this.subscriber = subscriber;
         }
 
+        private boolean isActive() {
+            return !interrupted && (unbounded || remain > 0);
+        }
+
         @Override
         public void request(long lines) {
             if (lines != Long.MAX_VALUE) {
-                this.lines += lines;
+                remain += lines;
             } else {
-                this.unbounded = true;
+                unbounded = true;
             }
         }
 
-        @Override
-        public void cancel() {
-            interrupted = true;
-        }
+        private void send(ByteBuffer chunk, int start, int end) {
+            final int limit = chunk.limit();
 
-        private boolean isActive() {
-            return !interrupted && (unbounded || lines > 0);
-        }
+            chunk.limit(end);
+            chunk.position(start);
+            subscriber.onNext(chunk.asReadOnlyBuffer());
 
-        private void send(ByteBuffer line) {
-            subscriber.onNext(line);
-            if (!unbounded) lines--;
+            chunk.limit(limit);
+
+            if (!unbounded) remain--;
         }
 
         private void onError(Throwable error) {
@@ -142,8 +138,13 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         @Override
+        public void cancel() {
+            interrupted = true;
+        }
+
+        @Override
         public void close() {
-            if (!interrupted && (unbounded || lines == 0)) {
+            if (!interrupted && (unbounded || remain == 0)) {
                 subscriber.onComplete();
             } else {
                 subscriber.onError(new RuntimeException("There's no more line for reading!"));
