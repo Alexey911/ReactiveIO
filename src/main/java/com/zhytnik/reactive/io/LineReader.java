@@ -36,7 +36,7 @@ public class LineReader implements Publisher<ByteBuffer> {
     private static final class LineParser implements Subscriber<ByteBuffer> {
 
         private boolean ignoreLF;
-        private Runnable breaker;
+        private Runnable interrupter;
         private ByteBuffer lastChunk;
 
         private final ParseRequest request;
@@ -49,7 +49,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         public void onSubscribe(Subscription s) {
             ((FileReader.ReadRequest) s).setAllocator(new MemoryAllocator());
             s.request(Long.MAX_VALUE);
-            breaker = s::cancel;
+            interrupter = s::cancel;
         }
 
         @Override
@@ -76,7 +76,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             }
 
             if (!request.isActive()) {
-                breaker.run();
+                interrupter.run();
             } else {
                 chunk.position(lineStart).mark();
                 chunk.position(chunk.limit());
