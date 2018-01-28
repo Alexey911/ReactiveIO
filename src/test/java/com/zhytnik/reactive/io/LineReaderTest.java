@@ -112,7 +112,7 @@ public class LineReaderTest {
         final ByteBuffer buffer = ByteBuffer.wrap(out);
         buffer.mark();
         buffer.position(vals.length);
-        allocator.setMemory(buffer);
+//        allocator.setMemory(buffer);
         return buffer;
     }
 }
