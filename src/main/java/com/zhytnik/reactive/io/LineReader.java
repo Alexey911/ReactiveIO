@@ -56,7 +56,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         public void onNext(ByteBuffer buffer) {
             buffer.reset();
 
-            for (int i = buffer.position(), max = buffer.limit(); !request.isDone() && i < max; i++) {
+            for (int i = buffer.position(), max = buffer.limit(); i < max && request.isActive(); i++) {
                 final int c = buffer.get(i);
 
                 if (c == '\r' || c == '\n') {
@@ -79,7 +79,7 @@ public class LineReader implements Publisher<ByteBuffer> {
                 }
             }
 
-            if (request.isDone()) {
+            if (!request.isActive()) {
                 breaker.run();
             } else {
                 buffer.position(buffer.limit());
@@ -90,7 +90,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void onComplete() {
-            if (!request.isDone() && lineStart < lastBuffer.limit()) {
+            if (request.isActive() && lineStart < lastBuffer.limit()) {
                 lastBuffer.position(lineStart);
                 request.accept(lastBuffer);
             }
@@ -105,6 +105,7 @@ public class LineReader implements Publisher<ByteBuffer> {
     private static final class ParseRequest implements Subscription, Closeable {
 
         private long lines;
+        private boolean unbounded;
         private boolean interrupted;
 
         private final Subscriber<? super ByteBuffer> subscriber;
@@ -115,7 +116,11 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void request(long lines) {
-            this.lines += lines;
+            if (lines == Long.MAX_VALUE) {
+                this.unbounded = true;
+            } else {
+                this.lines += lines;
+            }
         }
 
         @Override
@@ -123,22 +128,22 @@ public class LineReader implements Publisher<ByteBuffer> {
             interrupted = true;
         }
 
-        private boolean isDone() {
-            return interrupted || lines == 0;
+        private boolean isActive() {
+            return !interrupted && (unbounded || lines > 0);
         }
 
-        public void onError(Throwable error) {
+        private void onError(Throwable error) {
             subscriber.onError(error);
         }
 
         private void accept(ByteBuffer memory) {
             subscriber.onNext(memory);
-            lines--;
+            if (!unbounded) lines--;
         }
 
         @Override
         public void close() {
-            if (!interrupted && lines == 0) {
+            if (!interrupted && (unbounded || lines == 0)) {
                 subscriber.onComplete();
             } else {
                 subscriber.onError(new RuntimeException("There's no more line for reading!"));
