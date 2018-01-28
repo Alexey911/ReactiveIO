@@ -18,7 +18,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 public class LineReadingExample {
 
     public static void main(String[] args) {
-        final Path file = Paths.get("E://file2.txt");
+        final Path file = Paths.get("E://file.txt");
 
         lines(file, 3, line ->
                 System.out.println(UTF_8.decode(line))

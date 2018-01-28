@@ -47,17 +47,17 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void onSubscribe(Subscription read) {
-            breaker = read::cancel;
             read.request(Long.MAX_VALUE);
+            breaker = read::cancel;
         }
 
         @Override
         public void onNext(ByteBuffer buffer) {
-            int start = buffer.position();
             int limit = buffer.limit();
+            int readStart = buffer.position();
             int lineStart = buffer.reset().position();
 
-            for (int i = start; i < limit && request.isActive(); i++) {
+            for (int i = readStart; i < limit && request.isActive(); i++) {
                 final int c = buffer.get(i);
 
                 if (c == '\r' || c == '\n') {
