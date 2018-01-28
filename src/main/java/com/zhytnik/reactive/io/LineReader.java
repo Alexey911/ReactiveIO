@@ -24,7 +24,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         try (final ParseRequest r = new ParseRequest(subscriber)) {
             subscriber.onSubscribe(r);
 
-            final FileReader reader = new FileReader(path, new MemoryAllocator());
+            final FileReader reader = new FileReader(path);
             final LineParser parser = new LineParser(r);
 
             reader.subscribe(parser);
@@ -46,9 +46,10 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         @Override
-        public void onSubscribe(Subscription reader) {
-            reader.request(Long.MAX_VALUE);
-            breaker = reader::cancel;
+        public void onSubscribe(Subscription s) {
+            ((FileReader.ReadRequest) s).setAllocator(new MemoryAllocator());
+            s.request(Long.MAX_VALUE);
+            breaker = s::cancel;
         }
 
         @Override
@@ -96,7 +97,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
     }
 
-    private static final class ParseRequest implements Subscription, Closeable {
+    public static final class ParseRequest implements Subscription, Closeable {
 
         private long remain;
         private boolean unbounded;

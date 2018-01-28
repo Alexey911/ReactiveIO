@@ -14,14 +14,12 @@ import java.util.function.Supplier;
  * @author Alexey Zhytnik
  * @since 24.01.2018
  */
-class FileReader implements Publisher<ByteBuffer> {
+public class FileReader implements Publisher<ByteBuffer> {
 
     private final Path path;
-    private final Supplier<ByteBuffer> memory;
 
-    FileReader(Path path, Supplier<ByteBuffer> memory) {
+    public FileReader(Path path) {
         this.path = path;
-        this.memory = memory;
     }
 
     @Override
@@ -30,7 +28,7 @@ class FileReader implements Publisher<ByteBuffer> {
             reader.onSubscribe(r);
 
             while (!r.isDone()) {
-                final ByteBuffer chunk = memory.get();
+                final ByteBuffer chunk = r.allocator.get();
                 final int progress = r.resource.read(chunk, r.position());
 
                 chunk.limit(chunk.position());
@@ -44,7 +42,7 @@ class FileReader implements Publisher<ByteBuffer> {
         }
     }
 
-    private static final class ReadRequest implements Subscription, Closeable {
+    public static final class ReadRequest implements Subscription, Closeable {
 
         private long limit;
         private long position;
@@ -54,10 +52,16 @@ class FileReader implements Publisher<ByteBuffer> {
         private final FileChannel resource;
         private final Subscriber subscriber;
 
+        private Supplier<ByteBuffer> allocator;
+
         ReadRequest(Path path, Subscriber subscriber) throws IOException {
             this.resource = FileChannel.open(path);
             this.max = resource.size();
             this.subscriber = subscriber;
+        }
+
+        public void setAllocator(Supplier<ByteBuffer> allocator) {
+            this.allocator = allocator;
         }
 
         private boolean isDone() {
@@ -74,7 +78,10 @@ class FileReader implements Publisher<ByteBuffer> {
 
         @Override
         public void request(long bytes) {
-            if (bytes == Long.MAX_VALUE || limit + bytes <= max) {
+            if (allocator == null) {
+                interrupted = true;
+                subscriber.onError(new IllegalStateException("Memory allocator isn't installed"));
+            } else if (bytes == Long.MAX_VALUE || limit + bytes <= max) {
                 limit = Math.min(limit + bytes, max);
             } else {
                 interrupted = true;
