@@ -32,7 +32,9 @@ class FileReader implements Publisher<ByteBuffer> {
             while (!r.isDone()) {
                 ByteBuffer memory = allocator.get();
                 int progress = r.resource.read(memory, r.position());
+
                 memory.limit(memory.position());
+                memory.position(memory.limit() - progress);
 
                 reader.onNext(memory);
                 r.update(progress);
@@ -67,7 +69,7 @@ class FileReader implements Publisher<ByteBuffer> {
         }
 
         private void update(int progress) {
-            position += Math.max(progress, 0);
+            position += progress;
         }
 
         @Override

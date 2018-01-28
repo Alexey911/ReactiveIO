@@ -20,22 +20,21 @@ public class LineReader implements Publisher<ByteBuffer> {
     }
 
     @Override
-    public void subscribe(Subscriber<? super ByteBuffer> reader) {
-        try (final ParseRequest r = new ParseRequest(reader)) {
-            reader.onSubscribe(r);
+    public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
+        try (final ParseRequest r = new ParseRequest(subscriber)) {
+            subscriber.onSubscribe(r);
 
-            FileReader file = new FileReader(path, new MemoryAllocator());
-            LineParser parser = new LineParser(r);
+            final FileReader reader = new FileReader(path, new MemoryAllocator());
+            final LineParser parser = new LineParser(r);
 
-            file.subscribe(parser);
+            reader.subscribe(parser);
         } catch (Exception e) {
-            reader.onError(e);
+            subscriber.onError(e);
         }
     }
 
     private static final class LineParser implements Subscriber<ByteBuffer> {
 
-        private int lineStart;
         private boolean ignoreLF;
         private Runnable breaker;
         private ByteBuffer lastBuffer;
@@ -54,9 +53,10 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void onNext(ByteBuffer buffer) {
-            buffer.reset();
+            int start = buffer.position();
+            int lineStart = buffer.reset().position();
 
-            for (int i = buffer.position(), max = buffer.limit(); i < max && request.isActive(); i++) {
+            for (int i = start, max = buffer.limit(); i < max && request.isActive(); i++) {
                 final int c = buffer.get(i);
 
                 if (c == '\r' || c == '\n') {
@@ -72,7 +72,7 @@ public class LineReader implements Publisher<ByteBuffer> {
                     buffer.limit(i);
                     buffer.position(lineStart);
 
-                    request.accept(buffer);
+                    request.send(buffer);
 
                     lineStart = i + 1;
                     buffer.limit(max);
@@ -82,17 +82,20 @@ public class LineReader implements Publisher<ByteBuffer> {
             if (!request.isActive()) {
                 breaker.run();
             } else {
+                buffer.position(lineStart).mark();
                 buffer.position(buffer.limit());
-                buffer.mark();
+
                 lastBuffer = buffer;
             }
         }
 
         @Override
         public void onComplete() {
-            if (request.isActive() && lineStart < lastBuffer.limit()) {
+            int lineStart = lastBuffer.reset().position();
+
+            if (lineStart < lastBuffer.limit()) {
                 lastBuffer.position(lineStart);
-                request.accept(lastBuffer);
+                request.send(lastBuffer);
             }
         }
 
@@ -116,10 +119,10 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void request(long lines) {
-            if (lines == Long.MAX_VALUE) {
-                this.unbounded = true;
-            } else {
+            if (lines != Long.MAX_VALUE) {
                 this.lines += lines;
+            } else {
+                this.unbounded = true;
             }
         }
 
@@ -132,13 +135,13 @@ public class LineReader implements Publisher<ByteBuffer> {
             return !interrupted && (unbounded || lines > 0);
         }
 
-        private void onError(Throwable error) {
-            subscriber.onError(error);
+        private void send(ByteBuffer line) {
+            subscriber.onNext(line);
+            if (!unbounded) lines--;
         }
 
-        private void accept(ByteBuffer memory) {
-            subscriber.onNext(memory);
-            if (!unbounded) lines--;
+        private void onError(Throwable error) {
+            subscriber.onError(error);
         }
 
         @Override
