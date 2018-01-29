@@ -11,62 +11,51 @@ import java.util.function.Supplier;
 //TODO: transfer to LineReader
 class MemoryAllocator implements Supplier<ByteBuffer> {
 
-    private static final int PAGE_SIZE = 2;
-    private static final int MEMORY_SIZE = 3 * PAGE_SIZE;
+    private static final int PAGE_SIZE = 1;
+    private static final int MEMORY_SIZE = 2 * PAGE_SIZE;
 
-    private final ByteBuffer directMemory;
-
-    private ByteBuffer temp;
+    private ByteBuffer heap;
+    private final ByteBuffer direct;
 
     MemoryAllocator() {
-        ByteBuffer memory = ByteBuffer.allocateDirect(MEMORY_SIZE);
-        memory.order(ByteOrder.nativeOrder());
-        memory.limit(0);
-
-        reset(memory);
-
-        this.directMemory = memory;
+        direct = ByteBuffer
+                .allocateDirect(MEMORY_SIZE)
+                .order(ByteOrder.nativeOrder())
+                .limit(0)
+                .mark();
     }
 
     @Override
     public ByteBuffer get() {
-        if (temp != null) {
-            final ByteBuffer memory = temp;
+        final ByteBuffer memory = isDirectMode() ? direct : trySwapToDirect();
 
-            if (memory.limit() - memory.reset().position() <= PAGE_SIZE) {
-                int payload = directMemory.position();
-                reset(directMemory);
-
-                directMemory.put(temp);
-
-                extend(directMemory, payload);
-
-                temp = null;
-                return directMemory;
-            } else {
-                if (memory.limit() + PAGE_SIZE <= memory.capacity()) {
-                    memory.limit(memory.limit() + PAGE_SIZE);
-                } else {
-                    throw new RuntimeException("TODO: how to avoid it!");
-                }
-            }
+        if (memory.capacity() - memory.limit() >= PAGE_SIZE) {
+            return addBlankPage(memory, memory.limit());
+        } else if (!isFull(memory)) {
+            return compress(memory);
+        } else {
+            return swapToHeap(memory);
         }
+    }
 
-        final ByteBuffer memory = directMemory;
+    private boolean isDirectMode() {
+        return heap == null;
+    }
 
-        if (memory.limit() + PAGE_SIZE <= MEMORY_SIZE) {
-            extend(memory, memory.limit());
-        } else if (!tryCompress(memory)) {
-            final int payload = MEMORY_SIZE - memory.position();
+    private ByteBuffer addBlankPage(ByteBuffer memory, int to) {
+        return memory.position(to).limit(to + PAGE_SIZE);
+    }
 
-            ByteBuffer buffer = ByteBuffer.allocate(2 * MEMORY_SIZE).put(directMemory);
+    private boolean isFull(ByteBuffer memory) {
+        return memory.reset().position() < PAGE_SIZE;
+    }
 
-            buffer.position(0).mark();
-            buffer.position(payload);
-            buffer.limit(payload + PAGE_SIZE);
+    private ByteBuffer compress(ByteBuffer memory) {
+        final int start = memory.position();
 
-            return temp = buffer;
-        }
+        memory.compact();
+        reset(memory);
+        addBlankPage(memory, MEMORY_SIZE - start);
         return memory;
     }
 
@@ -74,21 +63,30 @@ class MemoryAllocator implements Supplier<ByteBuffer> {
         memory.position(0).mark();
     }
 
-    private void extend(ByteBuffer memory, int from) {
-        memory.position(from).limit(from + PAGE_SIZE);
+    private ByteBuffer trySwapToDirect() {
+        if (heap.limit() - heap.reset().position() > (MEMORY_SIZE - PAGE_SIZE)) return heap;
+
+        reset(direct);
+        direct.put(heap);
+        direct.position(0);
+        direct.limit(heap.limit() - heap.position());
+
+        heap = null;
+        return direct;
     }
 
-    private boolean tryCompress(ByteBuffer memory) {
-        final int start = memory.reset().position();
+    private ByteBuffer swapToHeap(ByteBuffer memory) {
+        final int payload = MEMORY_SIZE - memory.position();
 
-        if (start < PAGE_SIZE) return false;
+        final ByteBuffer target = ByteBuffer
+                .allocate(2 * memory.capacity())
+                .put(memory);
 
-        System.out.println("reusing " + (memory.limit() - start));
+        reset(target);
+        target.limit(payload + PAGE_SIZE);
+        target.position(payload);
 
-        memory.compact();
-        reset(memory);
-        extend(memory, MEMORY_SIZE - start);
-
-        return true;
+        heap = target;
+        return target;
     }
 }
