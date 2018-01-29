@@ -8,18 +8,20 @@ import java.util.function.Supplier;
  * @author Alexey Zhytnik
  * @since 27-Jan-18
  */
+//TODO: transfer to LineReader
 class MemoryAllocator implements Supplier<ByteBuffer> {
 
     private static final int PAGE_SIZE = 2;
+    private static final int MEMORY_SIZE = 4 * PAGE_SIZE;
 
     private final ByteBuffer directMemory;
 
     MemoryAllocator() {
-        ByteBuffer memory = ByteBuffer.allocateDirect(4 * PAGE_SIZE);
+        ByteBuffer memory = ByteBuffer.allocateDirect(MEMORY_SIZE);
         memory.order(ByteOrder.nativeOrder());
         memory.limit(0);
 
-        resetForRead(memory);
+        reset(memory);
 
         this.directMemory = memory;
     }
@@ -28,38 +30,31 @@ class MemoryAllocator implements Supplier<ByteBuffer> {
     public ByteBuffer get() {
         final ByteBuffer memory = directMemory;
 
-        final int lastAccess = memory.limit();
-
-        if (lastAccess + PAGE_SIZE <= memory.capacity()) {
-            memory.position(lastAccess);
-            memory.limit(lastAccess + PAGE_SIZE);
+        if (memory.limit() + PAGE_SIZE <= MEMORY_SIZE) {
+            extend(memory, memory.limit());
         } else {
-            final int firstAccess = firstAccess(memory);
-
-            if (memory.capacity() - firstAccess >= PAGE_SIZE) {
-
-                memory.position(firstAccess).compact();
-
-                resetForRead(memory);
-
-                memory.position(lastAccess - firstAccess);
-                memory.limit(memory.position() + PAGE_SIZE);
-            } else {
-                throw new UnsupportedOperationException("TODO: create use heap alternative");
-            }
+            compress(memory);
         }
-
         return memory;
     }
 
-    private void resetForRead(ByteBuffer memory) {
+    private void reset(ByteBuffer memory) {
         memory.position(0).mark();
     }
 
-    private int firstAccess(ByteBuffer memory) {
-        final int tmp = memory.position();
-        final int pos = memory.reset().position();
-        memory.position(tmp);
-        return pos;
+    private void extend(ByteBuffer memory, int from) {
+        memory.position(from).limit(from + PAGE_SIZE);
+    }
+
+    private void compress(ByteBuffer memory) {
+        final int start = memory.reset().position();
+
+        if (MEMORY_SIZE - start >= PAGE_SIZE) {
+            memory.compact();
+            reset(memory);
+            extend(memory, MEMORY_SIZE - start);
+        } else {
+            throw new UnsupportedOperationException("TODO: use heap alternative");
+        }
     }
 }
