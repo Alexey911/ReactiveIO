@@ -1,5 +1,6 @@
 package com.zhytnik.reactive.io;
 
+import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.concurrent.Flow.Publisher;
@@ -19,85 +20,138 @@ public class LineReader implements Publisher<ByteBuffer> {
     }
 
     @Override
-    public void subscribe(Subscriber<? super ByteBuffer> s) {
-        final InnerLineReader r = new InnerLineReader(s);
+    public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
+        try (final ParseRequest r = new ParseRequest(subscriber)) {
+            subscriber.onSubscribe(r);
 
-        s.onSubscribe(r);
-        new FileReader(path).subscribe(r);
+            final FileReader reader = new FileReader(path);
+            final LineParser parser = new LineParser(r);
+
+            reader.subscribe(parser);
+        } catch (Exception e) {
+            subscriber.onError(e);
+        }
     }
 
-    static final class InnerLineReader implements Subscriber<ByteBuffer>, Subscription {
+    private static final class LineParser implements Subscriber<ByteBuffer> {
 
-        private long lineCount;
-        private boolean unboundReading;
-        private Runnable ioInterrupter;
-        private final Subscriber<? super ByteBuffer> reader;
+        private boolean ignoreLF;
+        private Runnable interrupter;
+        private ByteBuffer lastChunk;
 
-        public InnerLineReader(Subscriber<? super ByteBuffer> reader) {
-            this.reader = reader;
-        }
+        private final ParseRequest request;
 
-        @Override
-        public void request(long lineCount) {
-            this.lineCount = lineCount;
-            this.unboundReading = (lineCount == Long.MAX_VALUE);
-        }
-
-        @Override
-        public void cancel() {
-            lineCount = 0;
+        LineParser(ParseRequest request) {
+            this.request = request;
         }
 
         @Override
         public void onSubscribe(Subscription s) {
+            ((FileReader.ReadRequest) s).setAllocator(new MemoryAllocator());
             s.request(Long.MAX_VALUE);
-            ioInterrupter = s::cancel;
+            interrupter = s::cancel;
         }
 
         @Override
-        public void onNext(ByteBuffer buffer) {
-            int from = 0, limit = buffer.limit();
+        public void onNext(ByteBuffer chunk) {
+            int readStart = chunk.position();
+            int lineStart = chunk.reset().position();
 
-            for (int i = 0; i < limit && lineCount > 0; i++) {
-                final int c = buffer.get(i);
+            for (int i = readStart, max = chunk.limit(); i < max && request.isActive(); i++) {
+                final int c = chunk.get(i);
 
                 if (c == '\r' || c == '\n') {
-                    buffer.position(from);
-                    buffer.limit(i);
 
-                    reader.onNext(buffer);
-                    lineCount--;
-                    buffer.limit(limit);
-
-                    if (c == '\r' && i + 1 < limit && buffer.get(i + 1) == '\n') {
-                        i++;
+                    if (c == '\r') {
+                        ignoreLF = true;
+                    } else if (ignoreLF) {
+                        lineStart = i + 1;
+                        ignoreLF = false;
+                        continue;
                     }
-                    from = i + 1;
+
+                    request.send(chunk, lineStart, i);
+                    lineStart = i + 1;
                 }
             }
 
-            if (from < limit && lineCount-- >= 0) {
-                buffer.position(from);
-                reader.onNext(buffer);
-            }
-
-            if (lineCount <= 0) {
-                ioInterrupter.run();
+            if (!request.isActive()) {
+                interrupter.run();
+            } else {
+                chunk.position(lineStart).mark();
+                lastChunk = chunk;
             }
         }
 
         @Override
         public void onComplete() {
-            if (unboundReading || lineCount <= 0) {
-                reader.onComplete();
-            } else {
-                reader.onError(new RuntimeException("There's no more line for reading!"));
+            if (lastChunk != null && lastChunk.reset().hasRemaining()) {
+                request.send(lastChunk, lastChunk.position(), lastChunk.limit());
             }
         }
 
         @Override
         public void onError(Throwable e) {
-            reader.onError(e);
+            request.onError(e);
+        }
+    }
+
+    public static final class ParseRequest implements Subscription, Closeable {
+
+        private long remain;
+        private boolean unbounded;
+        private boolean interrupted;
+
+        private final Subscriber<? super ByteBuffer> subscriber;
+
+        ParseRequest(Subscriber<? super ByteBuffer> subscriber) {
+            this.subscriber = subscriber;
+        }
+
+        private boolean isActive() {
+            return !interrupted && (unbounded || remain > 0);
+        }
+
+        @Override
+        public void request(long lines) {
+            if (lines != Long.MAX_VALUE) {
+                remain += lines;
+            } else {
+                unbounded = true;
+            }
+        }
+
+        private void send(ByteBuffer chunk, int start, int end) {
+            final int limit = chunk.limit();
+
+            chunk.limit(end);
+            chunk.position(start);
+            subscriber.onNext(chunk.asReadOnlyBuffer());
+
+            chunk.limit(limit);
+
+            if (!unbounded) remain--;
+        }
+
+        private void onError(Throwable error) {
+            interrupted = true;
+            subscriber.onError(error);
+        }
+
+        @Override
+        public void cancel() {
+            interrupted = true;
+        }
+
+        @Override
+        public void close() {
+            if (interrupted) return;
+
+            if (unbounded || remain == 0) {
+                subscriber.onComplete();
+            } else {
+                subscriber.onError(new RuntimeException("There's no more line for reading!"));
+            }
         }
     }
 }

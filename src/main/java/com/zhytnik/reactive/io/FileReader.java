@@ -3,19 +3,18 @@ package com.zhytnik.reactive.io;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
-import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * @author Alexey Zhytnik
  * @since 24.01.2018
  */
-class FileReader implements Publisher<ByteBuffer> {
+public class FileReader implements Publisher<ByteBuffer> {
 
     private final Path path;
 
@@ -24,64 +23,84 @@ class FileReader implements Publisher<ByteBuffer> {
     }
 
     @Override
-    public void subscribe(Subscriber<? super ByteBuffer> s) {
-        boolean failed = false;
+    public void subscribe(Subscriber<? super ByteBuffer> reader) {
+        try (final ReadRequest r = new ReadRequest(path, reader)) {
+            reader.onSubscribe(r);
 
-        try (InnerChannelReader r = new InnerChannelReader(path)) {
-            s.onSubscribe(r);
-            r.read(s::onNext);
-        } catch (Exception e) {
-            s.onError(e);
-            failed = true;
-        }
+            while (!r.isDone()) {
+                final ByteBuffer chunk = r.allocator.get();
+                final int progress = r.resource.read(chunk, r.position());
 
-        if (!failed) {
-            s.onComplete();
+                chunk.limit(chunk.position());
+                chunk.position(chunk.limit() - progress);
+
+                reader.onNext(chunk);
+                r.update(progress);
+            }
+        } catch (Exception error) {
+            reader.onError(error);
         }
     }
 
-    static final class InnerChannelReader implements Subscription, Closeable {
+    public static final class ReadRequest implements Subscription, Closeable {
 
-        private static final int PAGE_SIZE = 4096;
+        private long limit;
+        private long position;
+        private boolean interrupted;
 
-        private final FileChannel channel;
+        private final long max;
+        private final FileChannel resource;
+        private final Subscriber subscriber;
 
-        private boolean canceled;
+        private Supplier<ByteBuffer> allocator;
 
-        public InnerChannelReader(Path path) throws IOException {
-            this.channel = FileChannel.open(path);
+        ReadRequest(Path path, Subscriber subscriber) throws IOException {
+            this.resource = FileChannel.open(path);
+            this.max = resource.size();
+            this.subscriber = subscriber;
+        }
+
+        public void setAllocator(Supplier<ByteBuffer> allocator) {
+            this.allocator = allocator;
+        }
+
+        private boolean isDone() {
+            return interrupted || position == limit;
+        }
+
+        private long position() {
+            return position;
+        }
+
+        private void update(int progress) {
+            position += progress;
         }
 
         @Override
-        public void request(long n) {
-        }
-
-        public void read(Consumer<ByteBuffer> consumer) throws Exception {
-            final ByteBuffer buffer = ByteBuffer.allocateDirect(PAGE_SIZE);
-            buffer.order(ByteOrder.nativeOrder());
-
-            final long size = channel.size();
-            long position = 0L;
-
-            while (position < size && !canceled) {
-                buffer.rewind();
-                buffer.limit(PAGE_SIZE);
-
-                position += Math.max(channel.read(buffer, position), 0);
-                buffer.flip();
-
-                consumer.accept(buffer.asReadOnlyBuffer());
+        public void request(long bytes) {
+            if (allocator == null) {
+                interrupted = true;
+                subscriber.onError(new IllegalStateException("Memory allocator isn't installed"));
+            } else if (bytes == Long.MAX_VALUE || limit + bytes <= max) {
+                limit = Math.min(limit + bytes, max);
+            } else {
+                interrupted = true;
+                subscriber.onError(new IllegalArgumentException("The resource contains only " + max + " bytes"));
             }
         }
 
         @Override
         public void cancel() {
-            canceled = true;
+            interrupted = true;
         }
 
         @Override
         public void close() throws IOException {
-            channel.close();
+            resource.close();
+
+            if (!interrupted && limit > 0 && position == limit) {
+                subscriber.onComplete();
+            }
         }
     }
 }

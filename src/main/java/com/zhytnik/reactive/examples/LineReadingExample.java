@@ -3,12 +3,13 @@ package com.zhytnik.reactive.examples;
 import com.zhytnik.reactive.io.LineReader;
 
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
+import java.util.function.Consumer;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * @author Alexey Zhytnik
@@ -17,31 +18,33 @@ import java.util.concurrent.Flow.Subscription;
 public class LineReadingExample {
 
     public static void main(String[] args) {
-        final Path path = Paths.get("E://file.txt");
+        final Path file = Paths.get("E://file.txt");
 
-        lines(path).subscribe(new Subscriber<>() {
+        lines(file, 3, line ->
+                System.out.println(UTF_8.decode(line))
+        );
+    }
+
+    private static void lines(Path path, int count, Consumer<ByteBuffer> onNext) {
+        new LineReader(path).subscribe(new Subscriber<>() {
             @Override
             public void onSubscribe(Subscription s) {
-                s.request(3);
+                s.request(count);
             }
 
             @Override
-            public void onNext(ByteBuffer buffer) {
-                System.out.println(StandardCharsets.UTF_8.decode(buffer));
+            public void onNext(ByteBuffer line) {
+                onNext.accept(line);
             }
 
             @Override
             public void onError(Throwable e) {
-                System.out.println("Exception occurred: " + e);
+                e.printStackTrace();
             }
 
             @Override
             public void onComplete() {
             }
         });
-    }
-
-    private static Publisher<ByteBuffer> lines(Path path) {
-        return new LineReader(path);
     }
 }

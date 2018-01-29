@@ -1,10 +1,10 @@
 package com.zhytnik.reactive.io;
 
-import com.zhytnik.reactive.io.LineReader.InnerLineReader;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.nio.ByteBuffer;
+import java.util.concurrent.Flow;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,38 +14,42 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public class LineReaderTest {
 
-    InnerLineReader reader;
+    Flow.Subscriber<ByteBuffer> reader;
     TestSubscriber subscriber;
+    MemoryAllocator allocator;
 
     @Before
     public void setUp() {
         subscriber = new TestSubscriber();
-        reader = new InnerLineReader(subscriber);
-        reader.request(Long.MAX_VALUE);
-        reader.onSubscribe(subscriber);
+
+//        final LineReader.ParseRequest s = new LineReader.ParseRequest();
+//        s.request(4);
+//
+//        reader = new LineParser(subscriber, s, allocator = new MemoryAllocator());
+//        reader.onSubscribe(subscriber);
     }
 
     @Test
     public void stressTest() {
-        reader.onNext(bytes(
+        parse(
                 '0', '1', '2', '3', '\n',
                 '4', '5', '\r', '\n',
                 '6', '7', '\r',
                 '8'
-        ));
+        );
 
         assertThat(subscriber.values).containsSequence("0123", "45", "67", "8");
     }
 
     @Test
     public void parsesDifferentLineEnds() {
-        reader.onNext(bytes(
+        parse(
                 '0', '\r',
                 '2', '\n',
                 '6', '\r',
                 '7', '\r', '\n',
                 '8'
-        ));
+        );
 
         assertThat(subscriber.values).containsSequence("0", "2", "6", "7", "8");
     }
@@ -93,11 +97,22 @@ public class LineReaderTest {
         assertThat(subscriber.values).containsSequence("0", "1");
     }
 
+    void parse(char... vals) {
+        ByteBuffer bytes = bytes(vals);
+
+        reader.onNext(bytes);
+        reader.onComplete();
+    }
+
     ByteBuffer bytes(char... vals) {
         final byte[] out = new byte[vals.length];
 
         for (int i = 0; i < vals.length; i++) out[i] = (byte) vals[i];
 
-        return ByteBuffer.wrap(out);
+        final ByteBuffer buffer = ByteBuffer.wrap(out);
+        buffer.mark();
+        buffer.position(vals.length);
+//        allocator.setMemory(buffer);
+        return buffer;
     }
 }
