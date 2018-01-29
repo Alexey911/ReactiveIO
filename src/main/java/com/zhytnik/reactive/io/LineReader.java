@@ -132,6 +132,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         private void onError(Throwable error) {
+            interrupted = true;
             subscriber.onError(error);
         }
 
@@ -142,7 +143,9 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void close() {
-            if (!interrupted && (unbounded || remain == 0)) {
+            if (interrupted) return;
+
+            if (unbounded || remain == 0) {
                 subscriber.onComplete();
             } else {
                 subscriber.onError(new RuntimeException("There's no more line for reading!"));
