@@ -79,7 +79,6 @@ public class LineReader implements Publisher<ByteBuffer> {
                 interrupter.run();
             } else {
                 chunk.position(lineStart).mark();
-                chunk.position(chunk.limit());
                 lastChunk = chunk;
             }
         }
