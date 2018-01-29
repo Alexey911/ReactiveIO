@@ -70,7 +70,7 @@ public class LineReader implements Publisher<ByteBuffer> {
                         continue;
                     }
 
-                    request.send(chunk, lineStart, i);
+                    request.send(chunk, i);
                     lineStart = i + 1;
                 }
             }
@@ -87,7 +87,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         @Override
         public void onComplete() {
             if (lastChunk != null && lastChunk.reset().hasRemaining()) {
-                request.send(lastChunk, lastChunk.position(), lastChunk.limit());
+                request.send(lastChunk, lastChunk.limit());
             }
         }
 
@@ -122,12 +122,10 @@ public class LineReader implements Publisher<ByteBuffer> {
             }
         }
 
-        private void send(ByteBuffer chunk, int start, int end) {
+        private void send(ByteBuffer chunk, int end) {
             final int limit = chunk.limit();
 
-            chunk.limit(end);
-            chunk.position(start);
-            subscriber.onNext(chunk.asReadOnlyBuffer());
+            subscriber.onNext(chunk.limit(end).asReadOnlyBuffer());
 
             chunk.limit(limit);
 
