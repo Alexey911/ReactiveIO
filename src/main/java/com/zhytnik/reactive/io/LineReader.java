@@ -85,7 +85,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void onComplete() {
-            if (lastChunk != null && lastChunk.reset().hasRemaining()) {
+            if (lastChunk != null && lastChunk.reset().position() <= lastChunk.limit()) {
                 request.send(lastChunk, lastChunk.position(), lastChunk.limit());
             }
         }
