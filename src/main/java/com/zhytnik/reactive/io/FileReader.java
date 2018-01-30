@@ -22,7 +22,7 @@ public class FileReader implements Publisher<ByteBuffer> {
         this.path = path;
     }
 
-    @Override //TODO: add processing unexpected EOF
+    @Override
     public void subscribe(Subscriber<? super ByteBuffer> reader) {
         try (final ReadRequest r = new ReadRequest(path, reader)) {
             reader.onSubscribe(r);
