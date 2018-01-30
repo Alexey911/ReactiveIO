@@ -156,7 +156,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
     }
 
-    private static final class MemoryAllocator implements Supplier<ByteBuffer> {
+    static final class MemoryAllocator implements Supplier<ByteBuffer> {
 
         private static final int PAGE_SIZE = 4096;
         private static final int DIRECT_MEMORY_SIZE = 8 * PAGE_SIZE;
