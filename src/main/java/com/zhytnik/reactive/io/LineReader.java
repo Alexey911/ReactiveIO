@@ -29,7 +29,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             final FileReader reader = new FileReader(path);
             final LineParser parser = new LineParser(r);
 
-            reader.subscribe(parser);
+            if (r.isActive()) reader.subscribe(parser);
         } catch (Exception e) {
             subscriber.onError(e);
         }
@@ -108,7 +108,6 @@ public class LineReader implements Publisher<ByteBuffer> {
         private final Subscriber<? super ByteBuffer> subscriber;
 
         private ParseRequest(Subscriber<? super ByteBuffer> subscriber) {
-            this.remain = -1;
             this.subscriber = subscriber;
         }
 
@@ -121,7 +120,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             if (lines == Long.MAX_VALUE) {
                 unbounded = true;
             } else if (lines >= 0) {
-                remain = lines + Math.max(remain, 0);
+                remain += lines;
             } else {
                 onError(new IllegalArgumentException("Requested line count should not be negative!"));
             }
@@ -151,7 +150,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
             if (unbounded || remain == 0) {
                 subscriber.onComplete();
-            } else if (remain != -1) {
+            } else {
                 subscriber.onError(new RuntimeException("There's no more line for reading!"));
             }
         }

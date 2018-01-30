@@ -23,9 +23,9 @@ public class FileReader implements Publisher<ByteBuffer> {
     }
 
     @Override
-    public void subscribe(Subscriber<? super ByteBuffer> reader) {
-        try (final ReadRequest r = new ReadRequest(path, reader)) {
-            reader.onSubscribe(r);
+    public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
+        try (final ReadRequest r = new ReadRequest(path, subscriber)) {
+            subscriber.onSubscribe(r);
 
             while (r.isActive()) {
                 final ByteBuffer chunk = r.allocator.get();
@@ -34,11 +34,11 @@ public class FileReader implements Publisher<ByteBuffer> {
                 chunk.limit(chunk.position());
                 chunk.position(chunk.limit() - progress);
 
-                reader.onNext(chunk);
+                subscriber.onNext(chunk);
                 r.update(progress);
             }
         } catch (Exception error) {
-            reader.onError(error);
+            subscriber.onError(error);
         }
     }
 
@@ -80,12 +80,12 @@ public class FileReader implements Publisher<ByteBuffer> {
         public void request(long bytes) {
             if (allocator == null) {
                 interrupted = true;
-                subscriber.onError(new IllegalStateException("Memory allocator isn't installed"));
+                subscriber.onError(new IllegalStateException("Memory allocator isn't installed!"));
             } else if (bytes == Long.MAX_VALUE || limit + bytes <= max) {
                 limit = Math.min(limit + bytes, max);
             } else {
                 interrupted = true;
-                subscriber.onError(new IllegalArgumentException("The resource contains only " + max + " bytes"));
+                subscriber.onError(new IllegalArgumentException("The resource contains only " + max + " bytes!"));
             }
         }
 
