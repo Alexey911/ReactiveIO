@@ -12,14 +12,14 @@ import java.util.function.Supplier;
 class MemoryAllocator implements Supplier<ByteBuffer> {
 
     private static final int PAGE_SIZE = 4096;
-    private static final int MEMORY_SIZE = 4 * PAGE_SIZE;
+    private static final int DIRECT_MEMORY_SIZE = 4 * PAGE_SIZE;
 
     private ByteBuffer heap;
     private final ByteBuffer direct;
 
     MemoryAllocator() {
         direct = ByteBuffer
-                .allocateDirect(MEMORY_SIZE)
+                .allocateDirect(DIRECT_MEMORY_SIZE)
                 .order(ByteOrder.nativeOrder())
                 .limit(0)
                 .mark();
@@ -30,8 +30,8 @@ class MemoryAllocator implements Supplier<ByteBuffer> {
         final ByteBuffer memory = isDirectMode() ? direct : trySwapToDirect();
 
         if (memory.capacity() - memory.limit() >= PAGE_SIZE) {
-            return addBlankPage(memory, memory.limit());
-        } else if (!isFull(memory)) {
+            return addPage(memory, memory.limit());
+        } else if (hasGarbage(memory)) {
             return compress(memory);
         } else {
             return swapToHeap(memory);
@@ -42,33 +42,33 @@ class MemoryAllocator implements Supplier<ByteBuffer> {
         return heap == null;
     }
 
-    private ByteBuffer addBlankPage(ByteBuffer memory, int to) {
+    private ByteBuffer addPage(ByteBuffer memory, int to) {
         return memory.position(to).limit(to + PAGE_SIZE);
     }
 
-    private boolean isFull(ByteBuffer memory) {
-        return memory.reset().position() < PAGE_SIZE;
+    private boolean hasGarbage(ByteBuffer memory) {
+        return memory.reset().position() >= PAGE_SIZE;
     }
 
     private ByteBuffer compress(ByteBuffer memory) {
         final int start = memory.position();
 
         memory.compact();
-        reset(memory);
-        addBlankPage(memory, MEMORY_SIZE - start);
+        prepareForRead(memory);
+        addPage(memory, DIRECT_MEMORY_SIZE - start);
         return memory;
     }
 
-    private void reset(ByteBuffer memory) {
+    private void prepareForRead(ByteBuffer memory) {
         memory.position(0).mark();
     }
 
     private ByteBuffer trySwapToDirect() {
-        if (heap.limit() - heap.reset().position() > (MEMORY_SIZE - PAGE_SIZE)) return heap;
+        if (heap.limit() - heap.reset().position() > (DIRECT_MEMORY_SIZE - PAGE_SIZE)) return heap;
 
-        reset(direct);
-        direct.put(heap);
         direct.position(0);
+        direct.put(heap);
+        prepareForRead(direct);
         direct.limit(heap.limit() - heap.position());
 
         heap = null;
@@ -82,7 +82,7 @@ class MemoryAllocator implements Supplier<ByteBuffer> {
                 .allocate(2 * memory.capacity())
                 .put(memory);
 
-        reset(target);
+        prepareForRead(target);
         target.limit(payload + PAGE_SIZE);
         target.position(payload);
 
