@@ -20,12 +20,12 @@ public class LineReadingExample {
     public static void main(String[] args) {
         final Path file = Paths.get("E://file.txt");
 
-        lines(file, 3, line ->
+        lines(file, Long.MAX_VALUE, line ->
                 System.out.println(UTF_8.decode(line))
         );
     }
 
-    private static void lines(Path path, int count, Consumer<ByteBuffer> onNext) {
+    private static void lines(Path path, long count, Consumer<ByteBuffer> onNext) {
         new LineReader(path).subscribe(new Subscriber<>() {
             @Override
             public void onSubscribe(Subscription s) {

@@ -22,12 +22,12 @@ public class FileReader implements Publisher<ByteBuffer> {
         this.path = path;
     }
 
-    @Override
+    @Override //TODO: add processing unexpected EOF
     public void subscribe(Subscriber<? super ByteBuffer> reader) {
         try (final ReadRequest r = new ReadRequest(path, reader)) {
             reader.onSubscribe(r);
 
-            while (!r.isDone()) {
+            while (r.isActive()) {
                 final ByteBuffer chunk = r.allocator.get();
                 final int progress = r.resource.read(chunk, r.position());
 
@@ -54,7 +54,7 @@ public class FileReader implements Publisher<ByteBuffer> {
 
         private Supplier<ByteBuffer> allocator;
 
-        ReadRequest(Path path, Subscriber subscriber) throws IOException {
+        private ReadRequest(Path path, Subscriber subscriber) throws IOException {
             this.resource = FileChannel.open(path);
             this.max = resource.size();
             this.subscriber = subscriber;
@@ -64,8 +64,8 @@ public class FileReader implements Publisher<ByteBuffer> {
             this.allocator = allocator;
         }
 
-        private boolean isDone() {
-            return interrupted || position == limit;
+        private boolean isActive() {
+            return !interrupted && position < limit;
         }
 
         private long position() {

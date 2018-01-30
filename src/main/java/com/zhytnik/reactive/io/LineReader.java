@@ -43,7 +43,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         private final ParseRequest request;
 
-        LineParser(ParseRequest request) {
+        private LineParser(ParseRequest request) {
             this.request = request;
         }
 
@@ -59,7 +59,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             int readStart = chunk.position();
             int lineStart = chunk.reset().position();
 
-            for (int i = readStart, max = chunk.limit(); i < max && request.isActive(); i++) {
+            for (int i = readStart, limit = chunk.limit(); i < limit && request.isActive(); i++) {
                 final int c = chunk.get(i);
 
                 if (c == '\r' || c == '\n') {
@@ -73,15 +73,16 @@ public class LineReader implements Publisher<ByteBuffer> {
                     }
 
                     request.send(chunk, lineStart, i);
+
+                    chunk.limit(limit);
                     lineStart = i + 1;
                 }
             }
 
-            if (!request.isActive()) {
-                interrupter.run();
+            if (request.isActive()) {
+                lastChunk = chunk.position(lineStart).mark();
             } else {
-                chunk.position(lineStart).mark();
-                lastChunk = chunk;
+                interrupter.run();
             }
         }
 
@@ -98,7 +99,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
     }
 
-    public static final class ParseRequest implements Subscription, Closeable {
+    private static final class ParseRequest implements Subscription, Closeable {
 
         private long remain;
         private boolean unbounded;
@@ -106,7 +107,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         private final Subscriber<? super ByteBuffer> subscriber;
 
-        ParseRequest(Subscriber<? super ByteBuffer> subscriber) {
+        private ParseRequest(Subscriber<? super ByteBuffer> subscriber) {
             this.subscriber = subscriber;
         }
 
@@ -124,13 +125,9 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         private void send(ByteBuffer chunk, int start, int end) {
-            final int limit = chunk.limit();
-
             chunk.limit(end);
             chunk.position(start);
             subscriber.onNext(chunk.asReadOnlyBuffer());
-
-            chunk.limit(limit);
 
             if (!unbounded) remain--;
         }
