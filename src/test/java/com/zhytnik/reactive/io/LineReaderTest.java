@@ -16,7 +16,6 @@ public class LineReaderTest {
 
     Flow.Subscriber<ByteBuffer> reader;
     TestSubscriber subscriber;
-    MemoryAllocator allocator;
 
     @Before
     public void setUp() {
