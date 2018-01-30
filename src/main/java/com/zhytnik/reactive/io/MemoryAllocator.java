@@ -11,8 +11,8 @@ import java.util.function.Supplier;
 //TODO: transfer to LineReader
 class MemoryAllocator implements Supplier<ByteBuffer> {
 
-    private static final int PAGE_SIZE = 1;
-    private static final int MEMORY_SIZE = 2 * PAGE_SIZE;
+    private static final int PAGE_SIZE = 4096;
+    private static final int MEMORY_SIZE = 4 * PAGE_SIZE;
 
     private ByteBuffer heap;
     private final ByteBuffer direct;
@@ -76,7 +76,7 @@ class MemoryAllocator implements Supplier<ByteBuffer> {
     }
 
     private ByteBuffer swapToHeap(ByteBuffer memory) {
-        final int payload = MEMORY_SIZE - memory.position();
+        final int payload = memory.capacity() - memory.position();
 
         final ByteBuffer target = ByteBuffer
                 .allocate(2 * memory.capacity())
