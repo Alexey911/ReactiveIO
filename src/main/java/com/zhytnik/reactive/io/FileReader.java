@@ -98,7 +98,7 @@ public class FileReader implements Publisher<ByteBuffer> {
         public void close() throws IOException {
             resource.close();
 
-            if (!interrupted && limit > 0 && position == limit) {
+            if (!interrupted && position == limit) {
                 subscriber.onComplete();
             }
         }
