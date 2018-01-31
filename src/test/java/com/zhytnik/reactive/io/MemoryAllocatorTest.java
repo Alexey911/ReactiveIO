@@ -62,13 +62,13 @@ public class MemoryAllocatorTest {
         assertThat(allocator.get().position()).isEqualTo(5 * 4096);
         assertThat(allocator.get().position()).isEqualTo(6 * 4096);
 
-        allocator.get().position(8 * 4096 - 1).mark().put((byte) 7);
+        allocator.get().position(7 * 4096 + 4096 - 1).mark().put((byte) 7);
 
         final ByteBuffer compactedMemory = allocator.get();
 
         assertThat(compactedMemory.get(0)).isEqualTo((byte) 7);
         assertThat(compactedMemory.position()).isEqualTo(1);
-        assertThat(compactedMemory.limit()).isEqualTo(4097);
+        assertThat(compactedMemory.limit()).isEqualTo(1 + 4096);
     }
 
     @Test
@@ -88,7 +88,9 @@ public class MemoryAllocatorTest {
     @Test
     public void swapDataToHeapWhenDirectMemoryLimitIsReached() {
         allocator.get();
-        allocator.get();
+
+        allocator.get().put((byte) 77);
+
         allocator.get();
         allocator.get();
         allocator.get();
@@ -99,9 +101,10 @@ public class MemoryAllocatorTest {
         final ByteBuffer swapped = allocator.get();
 
         assertThat(swapped.isDirect()).isFalse();
-        assertThat(swapped.limit()).isEqualTo(4096 * 9);
-        assertThat(swapped.position()).isEqualTo(4096 * 8);
+        assertThat(swapped.position()).isEqualTo(8 * 4096);
+        assertThat(swapped.limit()).isEqualTo(8 * 4096 + 4096);
         assertThat(swapped.reset().position()).isEqualTo(0);
-        assertThat(swapped.capacity()).isGreaterThanOrEqualTo(4096 * 9);
+        assertThat(swapped.get(4096)).isEqualTo((byte) 77);
+        assertThat(swapped.capacity()).isGreaterThanOrEqualTo(9 * 4096);
     }
 }
