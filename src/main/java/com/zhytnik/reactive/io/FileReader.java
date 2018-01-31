@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
@@ -55,7 +56,7 @@ public class FileReader implements Publisher<ByteBuffer> {
         private Supplier<ByteBuffer> allocator;
 
         private ReadRequest(Path path, Subscriber subscriber) throws IOException {
-            this.resource = FileChannel.open(path);
+            this.resource = FileChannel.open(path, StandardOpenOption.READ);
             this.max = resource.size();
             this.subscriber = subscriber;
         }
