@@ -129,7 +129,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         private void send(ByteBuffer chunk, int start, int end) {
             chunk.limit(end);
             chunk.position(start);
-            subscriber.onNext(chunk.asReadOnlyBuffer());
+            subscriber.onNext(chunk);
 
             if (!unbounded) remain--;
         }
