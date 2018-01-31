@@ -216,7 +216,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             direct.position(0);
             direct.put(heap);
             prepareForRead(direct);
-            direct.limit(heap.limit() - heap.position());
+            direct.limit(heap.limit() - heap.reset().position());
 
             heap = null;
             return direct;

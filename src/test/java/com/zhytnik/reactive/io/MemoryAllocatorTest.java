@@ -107,4 +107,42 @@ public class MemoryAllocatorTest {
         assertThat(swapped.get(4096)).isEqualTo((byte) 77);
         assertThat(swapped.capacity()).isGreaterThanOrEqualTo(9 * 4096);
     }
+
+    @Test
+    public void alwaysTriesToUseDirectMemory() {
+        allocator.get();
+
+        allocator
+                .get()
+                .position(4096 + 777).mark()
+                .put((byte) 9);
+
+        allocator.get();
+        allocator.get();
+        allocator.get();
+        allocator.get();
+        allocator.get();
+        allocator.get();
+
+        final ByteBuffer compacted = allocator.get();
+
+        assertThat(compacted.isDirect()).isTrue();
+        assertThat(compacted.position()).isEqualTo(8 * 4096 - 4096 - 777);
+        assertThat(compacted.limit()).isEqualTo(8 * 4096 - 777);
+        assertThat(compacted.reset().position()).isEqualTo(0);
+        assertThat(compacted.get()).isEqualTo((byte) 9);
+
+        final ByteBuffer heapMemory = allocator.get();
+
+        assertThat(heapMemory.isDirect()).isFalse();
+        heapMemory.position(heapMemory.limit() - 1).mark().put((byte) 7);
+
+        final ByteBuffer swapped = allocator.get();
+
+        assertThat(swapped.isDirect());
+        assertThat(swapped.position()).isEqualTo(1);
+        assertThat(swapped.limit()).isEqualTo(1 + 4096);
+        assertThat(swapped.reset().position()).isEqualTo(0);
+        assertThat(swapped.reset().get(0)).isEqualTo((byte) 7);
+    }
 }
