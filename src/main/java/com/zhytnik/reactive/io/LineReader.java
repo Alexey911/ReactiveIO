@@ -67,9 +67,11 @@ public class LineReader implements Publisher<ByteBuffer> {
                     if (c == '\r') {
                         ignoreLF = true;
                     } else if (ignoreLF) {
-                        lineStart = i + 1;
                         ignoreLF = false;
-                        continue;
+                        if (i == lineStart) {
+                            lineStart = i + 1;
+                            continue;
+                        }
                     }
 
                     request.send(chunk, lineStart, i);
@@ -88,7 +90,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void onComplete() {
-            if (lastChunk != null && lastChunk.reset().position() <= lastChunk.limit()) {
+            if (lastChunk != null && lastChunk.reset().hasRemaining()) {
                 request.send(lastChunk, lastChunk.position(), lastChunk.limit());
             }
         }
@@ -129,7 +131,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         private void send(ByteBuffer chunk, int start, int end) {
             chunk.limit(end);
             chunk.position(start);
-            subscriber.onNext(chunk.asReadOnlyBuffer());
+            subscriber.onNext(chunk);
 
             if (!unbounded) remain--;
         }
@@ -156,7 +158,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
     }
 
-    private static final class MemoryAllocator implements Supplier<ByteBuffer> {
+    static final class MemoryAllocator implements Supplier<ByteBuffer> {
 
         private static final int PAGE_SIZE = 4096;
         private static final int DIRECT_MEMORY_SIZE = 8 * PAGE_SIZE;
@@ -198,11 +200,11 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         private ByteBuffer compress(ByteBuffer memory) {
-            final int start = memory.position();
+            final int payload = memory.limit() - memory.position();
 
             memory.compact();
             prepareForRead(memory);
-            addPage(memory, DIRECT_MEMORY_SIZE - start);
+            addPage(memory, payload);
             return memory;
         }
 
@@ -216,7 +218,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             direct.position(0);
             direct.put(heap);
             prepareForRead(direct);
-            direct.limit(heap.limit() - heap.position());
+            direct.limit(heap.limit() - heap.reset().position());
 
             heap = null;
             return direct;
@@ -230,8 +232,7 @@ public class LineReader implements Publisher<ByteBuffer> {
                     .put(memory);
 
             prepareForRead(target);
-            target.limit(payload + PAGE_SIZE);
-            target.position(payload);
+            addPage(target, payload);
 
             heap = target;
             return target;

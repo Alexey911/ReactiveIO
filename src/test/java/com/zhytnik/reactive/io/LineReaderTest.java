@@ -1,11 +1,21 @@
 package com.zhytnik.reactive.io;
 
+import org.junit.After;
 import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.concurrent.Flow;
+import java.nio.file.NoSuchFileException;
+import java.util.concurrent.Flow.Subscription;
 
+import static java.lang.Long.MAX_VALUE;
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.nio.file.Files.write;
+import static java.nio.file.StandardOpenOption.APPEND;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -14,35 +24,85 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public class LineReaderTest {
 
-    Flow.Subscriber<ByteBuffer> reader;
-    TestSubscriber subscriber;
+    @ClassRule
+    public static TemporaryFolder files = new TemporaryFolder();
+
+    File file;
+    LineReader reader;
+    ReadAssertionSubscriber subscriber;
 
     @Before
-    public void setUp() {
-        subscriber = new TestSubscriber();
-
-//        final LineReader.ParseRequest s = new LineReader.ParseRequest();
-//        s.request(4);
-//
-//        reader = new LineParser(subscriber, s, allocator = new MemoryAllocator());
-//        reader.onSubscribe(subscriber);
+    public void setUp() throws Exception {
+        file = files.newFile();
+        reader = new LineReader(file.toPath());
+        subscriber = new ReadAssertionSubscriber();
     }
 
     @Test
-    public void stressTest() {
-        parse(
+    public void checksRequests() {
+        subscriber.request = -1;
+        reader.subscribe(subscriber.asExpected(IllegalArgumentException.class));
+    }
+
+    @Test
+    public void readsLazy() {
+        file.delete();
+
+        subscriber.doCancel = true;
+        reader.subscribe(subscriber);
+    }
+
+    @Test
+    public void processesInternalErrors() {
+        file.delete();
+
+        reader.subscribe(subscriber.asExpected(NoSuchFileException.class));
+    }
+
+    @Test
+    public void failsOnNotZeroRemainingLines() {
+        writeToFile(
+                '0', '1', '\r', '\n',
+                '4', '\n',
+                '7', '\r',
+                '8'
+        );
+
+        subscriber.request = 5;
+        reader.subscribe(subscriber.asExpected(RuntimeException.class));
+    }
+
+    @Test
+    public void readsOnlyRequiredLinesAndReleasesResources() {
+        writeToFile(
+                '0', '1', '\r', '\n',
+                '4', '\n',
+                '7', '\r',
+                '8'
+        );
+
+        subscriber.request = 3;
+        reader.subscribe(subscriber);
+
+        assertThat(file.delete()).isTrue();
+        assertThat(subscriber.items).containsExactly("01", "4", "7");
+    }
+
+    @Test
+    public void readsMultilineText() {
+        readAll(
                 '0', '1', '2', '3', '\n',
                 '4', '5', '\r', '\n',
                 '6', '7', '\r',
                 '8'
         );
 
-        assertThat(subscriber.values).containsSequence("0123", "45", "67", "8");
+        assertThat(subscriber.items).containsExactly("0123", "45", "67", "8");
     }
 
     @Test
-    public void parsesDifferentLineEnds() {
-        parse(
+    public void readsLinesWithDifferentEnds() {
+        readAll(
                 '0', '\r',
                 '2', '\n',
                 '6', '\r',
@@ -50,68 +110,91 @@ public class LineReaderTest {
                 '8'
         );
 
-        assertThat(subscriber.values).containsSequence("0", "2", "6", "7", "8");
+        assertThat(subscriber.items).containsExactly("0", "2", "6", "7", "8");
     }
 
     @Test
-    public void parsesEmptyLine() {
-        reader.onNext(bytes());
+    public void readsEmptyFile() {
+        readAll();
 
-        assertThat(subscriber.values).containsSequence();
+        assertThat(subscriber.items).isEmpty();
     }
 
     @Test
-    public void parsesSingleCharLine() {
-        reader.onNext(bytes('8'));
+    public void readsSingleCharLine() {
+        readAll('8');
 
-        assertThat(subscriber.values).containsSequence("8");
+        assertThat(subscriber.items).containsExactly("8");
     }
 
     @Test
-    public void parsesSingleLine() {
-        reader.onNext(bytes('4', '\r', '\n'));
+    public void readsSingleLine() {
+        readAll('4', '\r', '\n');
 
-        assertThat(subscriber.values).containsSequence("4");
+        assertThat(subscriber.items).containsExactly("4");
     }
 
     @Test
-    public void parsesFewContinuousEmptyLines() {
-        reader.onNext(bytes(
+    public void readsRepeatableEmptyLines() {
+        readAll(
                 '0', '\n',
                 '\r', '\n',
                 '6', '\r',
                 '8'
-        ));
+        );
 
-        assertThat(subscriber.values).containsSequence("0", "", "6", "8");
+        assertThat(subscriber.items).containsExactly("0", "", "6", "8");
     }
 
     @Test
-    public void parsesRepeatableLines() {
-        reader.onNext(bytes(
-                '0', '\n',
-                '1', '\n'
-        ));
+    public void readsTextWithEmptyLines() {
+        readAll('\r', '\r');
 
-        assertThat(subscriber.values).containsSequence("0", "1");
+        assertThat(subscriber.items).containsExactly("", "");
     }
 
-    void parse(char... vals) {
-        ByteBuffer bytes = bytes(vals);
-
-        reader.onNext(bytes);
-        reader.onComplete();
+    @After
+    public void validate() {
+        subscriber.validate();
     }
 
-    ByteBuffer bytes(char... vals) {
-        final byte[] out = new byte[vals.length];
+    void readAll(char... chars) {
+        writeToFile(chars);
+        subscriber.request = MAX_VALUE;
+        reader.subscribe(subscriber);
+    }
 
-        for (int i = 0; i < vals.length; i++) out[i] = (byte) vals[i];
+    void writeToFile(char... chars) {
+        final byte[] bytes = new byte[chars.length];
 
-        final ByteBuffer buffer = ByteBuffer.wrap(out);
-        buffer.mark();
-        buffer.position(vals.length);
-//        allocator.setMemory(buffer);
-        return buffer;
+        for (int i = 0; i < chars.length; i++) {
+            bytes[i] = (byte) chars[i];
+        }
+        try {
+            write(file.toPath(), bytes, APPEND);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static class ReadAssertionSubscriber extends BaseAssertionSubscriber<ByteBuffer, String> {
+
+        boolean doCancel;
+
+        @Override
+        public void onSubscribe(Subscription s) {
+            super.onSubscribe(s);
+            if (doCancel) {
+                unsubscribe();
+            } else {
+                doRequest();
+            }
+        }
+
+        @Override
+        public void onNext(ByteBuffer line) {
+            super.onNext(line);
+            items.add(UTF_8.decode(line).toString());
+        }
     }
 }
