@@ -74,9 +74,9 @@ public class FileReaderTest {
         subscriber.request = 2 * 4096;
         reader.subscribe(subscriber);
 
-        assertThat(subscriber.chunks).hasSize(2);
-        assertThat(preparedChunks.get(0)).isEqualTo(subscriber.chunks.get(0));
-        assertThat(preparedChunks.get(1)).isEqualTo(subscriber.chunks.get(1));
+        assertThat(subscriber.items).hasSize(2);
+        assertThat(preparedChunks.get(0)).isEqualTo(subscriber.items.get(0));
+        assertThat(preparedChunks.get(1)).isEqualTo(subscriber.items.get(1));
     }
 
     @Test
@@ -102,10 +102,10 @@ public class FileReaderTest {
         addDataForRead(chunk4KB(), chunk4KB(), chunk4KB());
         reader.subscribe(subscriber);
 
-        assertThat(subscriber.chunks).hasSize(3);
-        assertThat(preparedChunks.get(0)).isEqualTo(subscriber.chunks.get(0));
-        assertThat(preparedChunks.get(1)).isEqualTo(subscriber.chunks.get(1));
-        assertThat(preparedChunks.get(2)).isEqualTo(subscriber.chunks.get(2));
+        assertThat(subscriber.items).hasSize(3);
+        assertThat(preparedChunks.get(0)).isEqualTo(subscriber.items.get(0));
+        assertThat(preparedChunks.get(1)).isEqualTo(subscriber.items.get(1));
+        assertThat(preparedChunks.get(2)).isEqualTo(subscriber.items.get(2));
     }
 
     @Test
@@ -136,11 +136,9 @@ public class FileReaderTest {
         }
     }
 
-    static class ReadAssertionSubscriber extends BaseAssertionSubscriber<ByteBuffer> {
+    static class ReadAssertionSubscriber extends BaseAssertionSubscriber<ByteBuffer, byte[]> {
 
-        long request;
         Supplier<ByteBuffer> allocator = new LineReader.MemoryAllocator();
-        List<byte[]> chunks = new ArrayList<>();
 
         @Override
         public void onSubscribe(Flow.Subscription s) {
@@ -155,7 +153,7 @@ public class FileReaderTest {
             super.onNext(b);
 
             assertThat(b).isNotNull();
-            chunks.add(allocate(b.limit() - b.position()).put(b).array());
+            items.add(allocate(b.limit() - b.position()).put(b).array());
         }
     }
 }

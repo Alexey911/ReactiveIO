@@ -1,5 +1,7 @@
 package com.zhytnik.reactive.io;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
 
@@ -7,7 +9,7 @@ import java.util.concurrent.Flow.Subscription;
  * @author Alexey Zhytnik
  * @since 31.01.2018
  */
-public abstract class BaseAssertionSubscriber<T> implements Subscriber<T> {
+public abstract class BaseAssertionSubscriber<T, R> implements Subscriber<T> {
 
     private boolean used;
     private boolean failed;
@@ -16,6 +18,9 @@ public abstract class BaseAssertionSubscriber<T> implements Subscriber<T> {
     private boolean illegalUse;
 
     private Class expectedError;
+
+    protected long request;
+    protected List<R> items = new ArrayList<>();
 
     @Override
     public void onSubscribe(Subscription s) {

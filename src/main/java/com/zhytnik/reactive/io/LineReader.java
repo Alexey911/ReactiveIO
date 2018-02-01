@@ -67,9 +67,11 @@ public class LineReader implements Publisher<ByteBuffer> {
                     if (c == '\r') {
                         ignoreLF = true;
                     } else if (ignoreLF) {
-                        lineStart = i + 1;
+                        if (i == lineStart) {
+                            lineStart = i + 1;
+                            continue;
+                        }
                         ignoreLF = false;
-                        continue;
                     }
 
                     request.send(chunk, lineStart, i);

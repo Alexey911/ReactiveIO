@@ -1,11 +1,20 @@
 package com.zhytnik.reactive.io;
 
+import org.junit.After;
 import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.concurrent.Flow;
+import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
+import java.util.concurrent.Flow.Subscription;
 
+import static java.lang.Long.MAX_VALUE;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -14,35 +23,35 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public class LineReaderTest {
 
-    Flow.Subscriber<ByteBuffer> reader;
-    TestSubscriber subscriber;
+    @ClassRule
+    public static TemporaryFolder files = new TemporaryFolder();
+
+    File file;
+    LineReader reader;
+    ReadAssertionSubscriber subscriber;
 
     @Before
-    public void setUp() {
-        subscriber = new TestSubscriber();
-
-//        final LineReader.ParseRequest s = new LineReader.ParseRequest();
-//        s.request(4);
-//
-//        reader = new LineParser(subscriber, s, allocator = new MemoryAllocator());
-//        reader.onSubscribe(subscriber);
+    public void setUp() throws Exception {
+        file = files.newFile();
+        reader = new LineReader(file.toPath());
+        subscriber = new ReadAssertionSubscriber();
     }
 
     @Test
     public void stressTest() {
-        parse(
+        read(
                 '0', '1', '2', '3', '\n',
                 '4', '5', '\r', '\n',
                 '6', '7', '\r',
                 '8'
         );
 
-        assertThat(subscriber.values).containsSequence("0123", "45", "67", "8");
+        assertThat(subscriber.items).containsSequence("0123", "45", "67", "8");
     }
 
     @Test
     public void parsesDifferentLineEnds() {
-        parse(
+        read(
                 '0', '\r',
                 '2', '\n',
                 '6', '\r',
@@ -50,68 +59,87 @@ public class LineReaderTest {
                 '8'
         );
 
-        assertThat(subscriber.values).containsSequence("0", "2", "6", "7", "8");
+        assertThat(subscriber.items).containsSequence("0", "2", "6", "7", "8");
     }
 
     @Test
     public void parsesEmptyLine() {
-        reader.onNext(bytes());
+        read();
 
-        assertThat(subscriber.values).containsSequence();
+        assertThat(subscriber.items).isEmpty();
     }
 
     @Test
     public void parsesSingleCharLine() {
-        reader.onNext(bytes('8'));
+        read('\r');
 
-        assertThat(subscriber.values).containsSequence("8");
+        assertThat(subscriber.items).containsSequence("8");
     }
 
     @Test
     public void parsesSingleLine() {
-        reader.onNext(bytes('4', '\r', '\n'));
+        read('4', '\r', '\n');
 
-        assertThat(subscriber.values).containsSequence("4");
+        assertThat(subscriber.items).containsSequence("4");
     }
 
     @Test
     public void parsesFewContinuousEmptyLines() {
-        reader.onNext(bytes(
+        read(
                 '0', '\n',
                 '\r', '\n',
                 '6', '\r',
                 '8'
-        ));
+        );
 
-        assertThat(subscriber.values).containsSequence("0", "", "6", "8");
+        assertThat(subscriber.items).containsSequence("0", "", "6", "8");
     }
 
     @Test
     public void parsesRepeatableLines() {
-        reader.onNext(bytes(
+        read(
                 '0', '\n',
                 '1', '\n'
-        ));
+        );
 
-        assertThat(subscriber.values).containsSequence("0", "1");
+        assertThat(subscriber.items).containsSequence("0", "1");
     }
 
-    void parse(char... vals) {
-        ByteBuffer bytes = bytes(vals);
-
-        reader.onNext(bytes);
-        reader.onComplete();
+    @After
+    public void validate() {
+        subscriber.validate();
     }
 
-    ByteBuffer bytes(char... vals) {
+    void read(char... vals) {
+        writeToFile(vals);
+        subscriber.request = MAX_VALUE;
+        reader.subscribe(subscriber);
+    }
+
+    void writeToFile(char... vals) {
         final byte[] out = new byte[vals.length];
 
         for (int i = 0; i < vals.length; i++) out[i] = (byte) vals[i];
 
-        final ByteBuffer buffer = ByteBuffer.wrap(out);
-        buffer.mark();
-        buffer.position(vals.length);
-//        allocator.setMemory(buffer);
-        return buffer;
+        try {
+            Files.write(file.toPath(), out, StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static class ReadAssertionSubscriber extends BaseAssertionSubscriber<ByteBuffer, String> {
+
+        @Override
+        public void onSubscribe(Subscription s) {
+            super.onSubscribe(s);
+            s.request(request);
+        }
+
+        @Override
+        public void onNext(ByteBuffer line) {
+            super.onNext(line);
+            items.add(UTF_8.decode(line).toString());
+        }
     }
 }
