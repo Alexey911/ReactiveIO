@@ -46,7 +46,7 @@ public class LineReaderTest {
                 '8'
         );
 
-        assertThat(subscriber.items).containsSequence("0123", "45", "67", "8");
+        assertThat(subscriber.items).containsExactly("0123", "45", "67", "8");
     }
 
     @Test
@@ -59,7 +59,7 @@ public class LineReaderTest {
                 '8'
         );
 
-        assertThat(subscriber.items).containsSequence("0", "2", "6", "7", "8");
+        assertThat(subscriber.items).containsExactly("0", "2", "6", "7", "8");
     }
 
     @Test
@@ -71,16 +71,16 @@ public class LineReaderTest {
 
     @Test
     public void parsesSingleCharLine() {
-        read('\r');
+        read('8');
 
-        assertThat(subscriber.items).containsSequence("8");
+        assertThat(subscriber.items).containsExactly("8");
     }
 
     @Test
     public void parsesSingleLine() {
         read('4', '\r', '\n');
 
-        assertThat(subscriber.items).containsSequence("4");
+        assertThat(subscriber.items).containsExactly("4");
     }
 
     @Test
@@ -92,7 +92,7 @@ public class LineReaderTest {
                 '8'
         );
 
-        assertThat(subscriber.items).containsSequence("0", "", "6", "8");
+        assertThat(subscriber.items).containsExactly("0", "", "6", "8");
     }
 
     @Test
@@ -102,7 +102,14 @@ public class LineReaderTest {
                 '1', '\n'
         );
 
-        assertThat(subscriber.items).containsSequence("0", "1");
+        assertThat(subscriber.items).containsExactly("0", "1");
+    }
+
+    @Test
+    public void readsFewOneByOneEmptyLines() {
+        read('\r', '\r');
+
+        assertThat(subscriber.items).containsExactly("", "");
     }
 
     @After
