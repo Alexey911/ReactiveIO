@@ -77,7 +77,8 @@ public abstract class BaseAssertionSubscriber<T, R> implements Subscriber<T> {
     }
 
     public void validate() {
-        if (illegalUse) throw new RuntimeException("Illegal behaviour was ignored");
+        if (illegalUse) throw new RuntimeException("Illegal behaviour was lost");
         if (!subscribed && !used && !failed && !completed) throw new IllegalStateException("Subscriber was unused");
+        if (subscribed && !failed && !completed) throw new IllegalStateException("Subscriber wasn't closed");
     }
 }

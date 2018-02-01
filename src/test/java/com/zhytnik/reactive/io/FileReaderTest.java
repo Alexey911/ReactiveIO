@@ -109,7 +109,7 @@ public class FileReaderTest {
     }
 
     @Test
-    public void readEmptyResources() {
+    public void readsEmptyResources() {
         subscriber.request = MAX_VALUE;
         reader.subscribe(subscriber);
     }
