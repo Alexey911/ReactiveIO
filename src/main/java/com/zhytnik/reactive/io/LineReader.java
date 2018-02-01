@@ -59,7 +59,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             int readStart = chunk.position();
             int lineStart = chunk.reset().position();
 
-            for (int i = readStart, limit = chunk.limit(); i < limit && request.isActive(); i++) {
+            for (int i = readStart, limit = chunk.limit(); i < limit; i++) {
                 final int c = chunk.get(i);
 
                 if (c == '\r' || c == '\n') {
@@ -74,6 +74,7 @@ public class LineReader implements Publisher<ByteBuffer> {
                         }
                     }
 
+                    if (!request.isActive()) break;
                     request.send(chunk, lineStart, i);
 
                     chunk.limit(limit);
