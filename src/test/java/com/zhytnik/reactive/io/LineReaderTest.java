@@ -38,7 +38,7 @@ public class LineReaderTest {
     }
 
     @Test
-    public void stressTest() {
+    public void readsMultilineText() {
         read(
                 '0', '1', '2', '3', '\n',
                 '4', '5', '\r', '\n',
@@ -50,7 +50,7 @@ public class LineReaderTest {
     }
 
     @Test
-    public void parsesDifferentLineEnds() {
+    public void readsLinesWithDifferentEnds() {
         read(
                 '0', '\r',
                 '2', '\n',
@@ -63,28 +63,28 @@ public class LineReaderTest {
     }
 
     @Test
-    public void parsesEmptyLine() {
+    public void readsEmptyFile() {
         read();
 
         assertThat(subscriber.items).isEmpty();
     }
 
     @Test
-    public void parsesSingleCharLine() {
+    public void readsSingleCharLine() {
         read('8');
 
         assertThat(subscriber.items).containsExactly("8");
     }
 
     @Test
-    public void parsesSingleLine() {
+    public void readsSingleLine() {
         read('4', '\r', '\n');
 
         assertThat(subscriber.items).containsExactly("4");
     }
 
     @Test
-    public void parsesFewContinuousEmptyLines() {
+    public void readsRepeatableEmptyLines() {
         read(
                 '0', '\n',
                 '\r', '\n',
@@ -96,17 +96,7 @@ public class LineReaderTest {
     }
 
     @Test
-    public void parsesRepeatableLines() {
-        read(
-                '0', '\n',
-                '1', '\n'
-        );
-
-        assertThat(subscriber.items).containsExactly("0", "1");
-    }
-
-    @Test
-    public void readsFewOneByOneEmptyLines() {
+    public void readsTextWithEmptyLines() {
         read('\r', '\r');
 
         assertThat(subscriber.items).containsExactly("", "");
@@ -117,19 +107,20 @@ public class LineReaderTest {
         subscriber.validate();
     }
 
-    void read(char... vals) {
-        writeToFile(vals);
+    void read(char... chars) {
+        writeToFile(chars);
         subscriber.request = MAX_VALUE;
         reader.subscribe(subscriber);
     }
 
-    void writeToFile(char... vals) {
-        final byte[] out = new byte[vals.length];
+    void writeToFile(char... chars) {
+        final byte[] bytes = new byte[chars.length];
 
-        for (int i = 0; i < vals.length; i++) out[i] = (byte) vals[i];
-
+        for (int i = 0; i < chars.length; i++) {
+            bytes[i] = (byte) chars[i];
+        }
         try {
-            Files.write(file.toPath(), out, StandardOpenOption.APPEND);
+            Files.write(file.toPath(), bytes, StandardOpenOption.APPEND);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
