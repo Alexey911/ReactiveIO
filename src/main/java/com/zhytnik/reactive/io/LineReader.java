@@ -67,11 +67,11 @@ public class LineReader implements Publisher<ByteBuffer> {
                     if (c == '\r') {
                         ignoreLF = true;
                     } else if (ignoreLF) {
+                        ignoreLF = false;
                         if (i == lineStart) {
                             lineStart = i + 1;
                             continue;
                         }
-                        ignoreLF = false;
                     }
 
                     request.send(chunk, lineStart, i);
@@ -200,11 +200,11 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         private ByteBuffer compress(ByteBuffer memory) {
-            final int start = memory.position();
+            final int payload = memory.limit() - memory.position();
 
             memory.compact();
             prepareForRead(memory);
-            addPage(memory, DIRECT_MEMORY_SIZE - start);
+            addPage(memory, payload);
             return memory;
         }
 
@@ -232,8 +232,7 @@ public class LineReader implements Publisher<ByteBuffer> {
                     .put(memory);
 
             prepareForRead(target);
-            target.limit(payload + PAGE_SIZE);
-            target.position(payload);
+            addPage(target, payload);
 
             heap = target;
             return target;
