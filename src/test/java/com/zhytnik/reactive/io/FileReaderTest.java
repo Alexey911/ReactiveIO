@@ -145,7 +145,7 @@ public class FileReaderTest {
             super.onSubscribe(s);
 
             ((FileReader.ReadRequest) s).setAllocator(allocator);
-            s.request(request);
+            doRequest();
         }
 
         @Override

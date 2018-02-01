@@ -17,7 +17,9 @@ public abstract class BaseAssertionSubscriber<T, R> implements Subscriber<T> {
     private boolean subscribed;
     private boolean illegalUse;
 
+    private boolean cancelled;
     private Class expectedError;
+    private Subscription subscription;
 
     protected long request;
     protected List<R> items = new ArrayList<>();
@@ -25,6 +27,7 @@ public abstract class BaseAssertionSubscriber<T, R> implements Subscriber<T> {
     @Override
     public void onSubscribe(Subscription s) {
         if (!subscribed && !used && !failed && !completed) {
+            subscription = s;
             subscribed = true;
         } else {
             illegalUse = true;
@@ -34,7 +37,7 @@ public abstract class BaseAssertionSubscriber<T, R> implements Subscriber<T> {
 
     @Override
     public void onNext(T item) {
-        if (subscribed && !failed && !completed) {
+        if (subscribed && !failed && !completed && !cancelled) {
             used = true;
         } else {
             illegalUse = true;
@@ -45,7 +48,7 @@ public abstract class BaseAssertionSubscriber<T, R> implements Subscriber<T> {
     @Override
     @SuppressWarnings("unchecked")
     public void onError(Throwable error) {
-        if (!failed && !completed) {
+        if (!failed && !completed && !cancelled) {
             failed = true;
 
             if (expectedError == null || !expectedError.isAssignableFrom(error.getClass())) {
@@ -63,7 +66,7 @@ public abstract class BaseAssertionSubscriber<T, R> implements Subscriber<T> {
 
     @Override
     public void onComplete() {
-        if (subscribed && !failed && !completed) {
+        if (subscribed && !failed && !completed && !cancelled) {
             completed = true;
         } else {
             illegalUse = true;
@@ -76,9 +79,24 @@ public abstract class BaseAssertionSubscriber<T, R> implements Subscriber<T> {
         return this;
     }
 
+    public void unsubscribe() {
+        subscription.cancel();
+        cancelled = true;
+    }
+
+    public void doRequest() {
+        subscription.request(request);
+    }
+
     public void validate() {
-        if (illegalUse) throw new RuntimeException("Illegal behaviour was lost");
-        if (!subscribed && !used && !failed && !completed) throw new IllegalStateException("Subscriber was unused");
-        if (subscribed && !failed && !completed) throw new IllegalStateException("Subscriber wasn't closed");
+        if (illegalUse) {
+            throw new RuntimeException("Illegal use was detected");
+        }
+        if (!subscribed && !used && !failed && !completed) {
+            throw new IllegalStateException("Subscriber was unused");
+        }
+        if (!cancelled && subscribed && !failed && !completed) {
+            throw new IllegalStateException("Subscriber wasn't closed");
+        }
     }
 }

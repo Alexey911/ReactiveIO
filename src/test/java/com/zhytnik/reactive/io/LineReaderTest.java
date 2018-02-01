@@ -9,12 +9,13 @@ import org.junit.rules.TemporaryFolder;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
-import java.nio.file.StandardOpenOption;
+import java.nio.file.NoSuchFileException;
 import java.util.concurrent.Flow.Subscription;
 
 import static java.lang.Long.MAX_VALUE;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.nio.file.Files.write;
+import static java.nio.file.StandardOpenOption.APPEND;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -38,8 +39,58 @@ public class LineReaderTest {
     }
 
     @Test
+    public void checksRequests() {
+        subscriber.request = -1;
+        reader.subscribe(subscriber.asExpected(IllegalArgumentException.class));
+    }
+
+    @Test
+    public void readsLazy() {
+        file.delete();
+
+        subscriber.doCancel = true;
+        reader.subscribe(subscriber);
+    }
+
+    @Test
+    public void processesInternalErrors() {
+        file.delete();
+
+        reader.subscribe(subscriber.asExpected(NoSuchFileException.class));
+    }
+
+    @Test
+    public void failsOnNotZeroRemainingLines() {
+        writeToFile(
+                '0', '1', '\r', '\n',
+                '4', '\n',
+                '7', '\r',
+                '8'
+        );
+
+        subscriber.request = 5;
+        reader.subscribe(subscriber.asExpected(RuntimeException.class));
+    }
+
+    @Test
+    public void readsOnlyRequiredLinesAndReleasesResources() {
+        writeToFile(
+                '0', '1', '\r', '\n',
+                '4', '\n',
+                '7', '\r',
+                '8'
+        );
+
+        subscriber.request = 3;
+        reader.subscribe(subscriber);
+
+        assertThat(file.delete()).isTrue();
+        assertThat(subscriber.items).containsExactly("01", "4", "7");
+    }
+
+    @Test
     public void readsMultilineText() {
-        read(
+        readAll(
                 '0', '1', '2', '3', '\n',
                 '4', '5', '\r', '\n',
                 '6', '7', '\r',
@@ -51,7 +102,7 @@ public class LineReaderTest {
 
     @Test
     public void readsLinesWithDifferentEnds() {
-        read(
+        readAll(
                 '0', '\r',
                 '2', '\n',
                 '6', '\r',
@@ -64,28 +115,28 @@ public class LineReaderTest {
 
     @Test
     public void readsEmptyFile() {
-        read();
+        readAll();
 
         assertThat(subscriber.items).isEmpty();
     }
 
     @Test
     public void readsSingleCharLine() {
-        read('8');
+        readAll('8');
 
         assertThat(subscriber.items).containsExactly("8");
     }
 
     @Test
     public void readsSingleLine() {
-        read('4', '\r', '\n');
+        readAll('4', '\r', '\n');
 
         assertThat(subscriber.items).containsExactly("4");
     }
 
     @Test
     public void readsRepeatableEmptyLines() {
-        read(
+        readAll(
                 '0', '\n',
                 '\r', '\n',
                 '6', '\r',
@@ -97,7 +148,7 @@ public class LineReaderTest {
 
     @Test
     public void readsTextWithEmptyLines() {
-        read('\r', '\r');
+        readAll('\r', '\r');
 
         assertThat(subscriber.items).containsExactly("", "");
     }
@@ -107,7 +158,7 @@ public class LineReaderTest {
         subscriber.validate();
     }
 
-    void read(char... chars) {
+    void readAll(char... chars) {
         writeToFile(chars);
         subscriber.request = MAX_VALUE;
         reader.subscribe(subscriber);
@@ -120,7 +171,7 @@ public class LineReaderTest {
             bytes[i] = (byte) chars[i];
         }
         try {
-            Files.write(file.toPath(), bytes, StandardOpenOption.APPEND);
+            write(file.toPath(), bytes, APPEND);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -128,10 +179,16 @@ public class LineReaderTest {
 
     static class ReadAssertionSubscriber extends BaseAssertionSubscriber<ByteBuffer, String> {
 
+        boolean doCancel;
+
         @Override
         public void onSubscribe(Subscription s) {
             super.onSubscribe(s);
-            s.request(request);
+            if (doCancel) {
+                unsubscribe();
+            } else {
+                doRequest();
+            }
         }
 
         @Override
