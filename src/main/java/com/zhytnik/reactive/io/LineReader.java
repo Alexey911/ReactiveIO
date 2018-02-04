@@ -177,36 +177,44 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public ByteBuffer get() {
-            final ByteBuffer memory = isDirectMode() ? direct : trySwapToDirect();
-
-            if (memory.capacity() - memory.limit() >= PAGE_SIZE) {
-                return addPage(memory, memory.limit());
-            } else if (hasGarbage(memory)) {
-                return compress(memory);
+            final ByteBuffer memory = fetchMemory();
+            if (tryAddPage(memory) || tryCompact(memory)) {
+                return memory;
             } else {
                 return swapToHeap(memory);
             }
         }
 
-        private boolean isDirectMode() {
-            return heap == null;
+        private ByteBuffer fetchMemory() {
+            return heap == null ? direct : trySwapToDirect();
         }
 
-        private ByteBuffer addPage(ByteBuffer memory, int to) {
-            return memory.position(to).limit(to + PAGE_SIZE);
+        private boolean tryAddPage(ByteBuffer memory) {
+            if (memory.capacity() - memory.limit() >= PAGE_SIZE) {
+                addPage(memory, memory.limit());
+                return true;
+            }
+            return false;
         }
 
-        private boolean hasGarbage(ByteBuffer memory) {
-            return memory.reset().position() >= PAGE_SIZE;
+        private boolean tryCompact(ByteBuffer memory) {
+            if (memory.reset().position() >= PAGE_SIZE) {
+                compress(memory);
+                return true;
+            }
+            return false;
         }
 
-        private ByteBuffer compress(ByteBuffer memory) {
+        private void addPage(ByteBuffer memory, int to) {
+            memory.position(to).limit(to + PAGE_SIZE);
+        }
+
+        private void compress(ByteBuffer memory) {
             final int payload = memory.limit() - memory.position();
 
             memory.compact();
             prepareForRead(memory);
             addPage(memory, payload);
-            return memory;
         }
 
         private void prepareForRead(ByteBuffer memory) {
