@@ -60,7 +60,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             int lineStart = chunk.reset().position();
 
             for (int i = readStart, limit = chunk.limit(); i < limit; i++) {
-                final int c = chunk.get(i);
+                final byte c = chunk.get(i);
 
                 if (c == '\r' || c == '\n') {
 
@@ -68,17 +68,19 @@ public class LineReader implements Publisher<ByteBuffer> {
                         ignoreLF = true;
                     } else if (ignoreLF) {
                         ignoreLF = false;
-                        if (i == lineStart) {
+                        if (lineStart == i) {
                             lineStart = i + 1;
                             continue;
                         }
                     }
 
-                    if (!request.isActive()) break;
-                    request.send(chunk, lineStart, i);
+                    chunk.position(lineStart).limit(i);
+                    request.send(chunk);
 
                     chunk.limit(limit);
                     lineStart = i + 1;
+
+                    if (!request.isActive()) break;
                 }
             }
 
@@ -92,7 +94,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         @Override
         public void onComplete() {
             if (lastChunk != null && lastChunk.reset().hasRemaining()) {
-                request.send(lastChunk, lastChunk.position(), lastChunk.limit());
+                request.send(lastChunk);
             }
         }
 
@@ -129,11 +131,8 @@ public class LineReader implements Publisher<ByteBuffer> {
             }
         }
 
-        private void send(ByteBuffer chunk, int start, int end) {
-            chunk.limit(end);
-            chunk.position(start);
+        private void send(ByteBuffer chunk) {
             subscriber.onNext(chunk);
-
             if (!unbounded) remain--;
         }
 
