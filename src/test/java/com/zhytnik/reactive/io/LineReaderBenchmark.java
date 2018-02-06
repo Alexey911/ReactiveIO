@@ -25,7 +25,8 @@ import java.util.concurrent.TimeUnit;
 @State(Scope.Benchmark)
 public class LineReaderBenchmark {
 
-    static String path;
+    @Param({})
+    String path;
 
     LineReader reader;
     BenchmarkSubscriber subscriber;
@@ -70,10 +71,10 @@ public class LineReaderBenchmark {
         if (args.length == 0) {
             throw new IllegalArgumentException("Please, set up file path for benchmarking!");
         }
-        path = args[0];
 
         Options opt = new OptionsBuilder()
                 .include(LineReaderBenchmark.class.getSimpleName())
+                .param("path", args[0])
                 .build();
 
         new Runner(opt).run();
