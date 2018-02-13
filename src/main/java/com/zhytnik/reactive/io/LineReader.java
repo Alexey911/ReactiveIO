@@ -59,10 +59,12 @@ public class LineReader implements Publisher<ByteBuffer> {
             int readLimit = chunk.limit();
             int nextStart = read(chunk, readLimit);
 
-            chunk.limit(readLimit);
-            lastChunk = chunk.position(nextStart).mark();
-
-            if (!request.isActive()) interrupter.run();
+            if (request.isActive()) {
+                chunk.limit(readLimit);
+                lastChunk = chunk.position(nextStart).mark();
+            } else {
+                interrupter.run();
+            }
         }
 
         private int read(ByteBuffer chunk, int limit) {
