@@ -58,9 +58,10 @@ public class LineReader implements Publisher<ByteBuffer> {
         public void onNext(ByteBuffer chunk) {
             int readStart = chunk.position();
             int lineStart = chunk.reset().position();
+            int readLimit = chunk.limit();
             byte[] memory = chunk.array();
 
-            for (int i = readStart, limit = chunk.limit(); i < limit; i++) {
+            for (int i = readStart; i < readLimit; i++) {
                 final byte c = memory[i];
 
                 if (c == '\r' || c == '\n') {
@@ -75,10 +76,9 @@ public class LineReader implements Publisher<ByteBuffer> {
                         }
                     }
 
-                    chunk.position(lineStart).limit(i);
+                    chunk.limit(i).position(lineStart);
                     request.send(chunk);
 
-                    chunk.limit(limit);
                     lineStart = i + 1;
 
                     if (!request.isActive()) break;
@@ -86,6 +86,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             }
 
             if (request.isActive()) {
+                chunk.limit(readLimit);
                 lastChunk = chunk.position(lineStart).mark();
             } else {
                 interrupter.run();
