@@ -234,6 +234,8 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         private ByteBuffer swapToTemp(ByteBuffer memory) {
+            System.out.println("WARNING: using additional memory!");
+
             final int payload = memory.capacity() - memory.position();
 
             final ByteBuffer target = ByteBuffer
