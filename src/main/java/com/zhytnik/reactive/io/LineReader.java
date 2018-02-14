@@ -8,6 +8,7 @@ import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
 import java.util.function.Supplier;
+import java.util.logging.Logger;
 
 /**
  * @author Alexey Zhytnik
@@ -168,14 +169,14 @@ public class LineReader implements Publisher<ByteBuffer> {
     static final class MemoryAllocator implements Supplier<ByteBuffer> {
 
         private static final int PAGE_SIZE = 4096;
-        private static final int MAIN_MEMORY_SIZE = 8 * PAGE_SIZE;
+        private static final int GENERAL_MEMORY_SIZE = 8 * PAGE_SIZE;
 
-        private ByteBuffer temp;
-        private final ByteBuffer main;
+        private ByteBuffer temporal;
+        private final ByteBuffer general;
 
         MemoryAllocator() {
-            main = ByteBuffer
-                    .allocate(MAIN_MEMORY_SIZE)
+            general = ByteBuffer
+                    .allocate(GENERAL_MEMORY_SIZE)
                     .order(ByteOrder.nativeOrder())
                     .limit(0)
                     .mark();
@@ -187,12 +188,12 @@ public class LineReader implements Publisher<ByteBuffer> {
             if (tryAddPage(memory) || tryCompact(memory)) {
                 return memory;
             } else {
-                return swapToTemp(memory);
+                return swapToTemporal(memory);
             }
         }
 
         private ByteBuffer fetchMemory() {
-            return temp == null ? main : trySwapToMain();
+            return temporal == null ? general : trySwapToGeneral();
         }
 
         private boolean tryAddPage(ByteBuffer memory) {
@@ -227,20 +228,21 @@ public class LineReader implements Publisher<ByteBuffer> {
             memory.position(0).mark();
         }
 
-        private ByteBuffer trySwapToMain() {
-            if (temp.limit() - temp.reset().position() > (MAIN_MEMORY_SIZE - PAGE_SIZE)) return temp;
+        private ByteBuffer trySwapToGeneral() {
+            if (temporal.limit() - temporal.reset().position() > (GENERAL_MEMORY_SIZE - PAGE_SIZE)) {
+                return temporal;
+            }
+            general.position(0);
+            general.put(temporal);
+            prepareForRead(general);
+            general.limit(temporal.limit() - temporal.reset().position());
 
-            main.position(0);
-            main.put(temp);
-            prepareForRead(main);
-            main.limit(temp.limit() - temp.reset().position());
-
-            temp = null;
-            return main;
+            temporal = null;
+            return general;
         }
 
-        private ByteBuffer swapToTemp(ByteBuffer memory) {
-            System.out.println("WARNING: using additional memory!");
+        private ByteBuffer swapToTemporal(ByteBuffer memory) {
+            Logger.getLogger("MemoryAllocator").warning("Using additional memory!");
 
             final int payload = memory.capacity() - memory.position();
 
@@ -251,7 +253,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             prepareForRead(target);
             addPage(target, payload);
 
-            temp = target;
+            temporal = target;
             return target;
         }
     }
