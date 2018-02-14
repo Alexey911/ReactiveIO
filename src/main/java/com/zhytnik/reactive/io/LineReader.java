@@ -2,12 +2,12 @@ package com.zhytnik.reactive.io;
 
 import java.io.Closeable;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.file.Path;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
 import java.util.function.Supplier;
+import java.util.logging.Logger;
 
 /**
  * @author Alexey Zhytnik
@@ -56,11 +56,24 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         @Override
         public void onNext(ByteBuffer chunk) {
+            int readLimit = chunk.limit();
+            int nextStart = read(chunk, readLimit);
+
+            if (request.isActive()) {
+                chunk.limit(readLimit);
+                lastChunk = chunk.position(nextStart).mark();
+            } else {
+                interrupter.run();
+            }
+        }
+
+        private int read(ByteBuffer chunk, int limit) {
             int readStart = chunk.position();
             int lineStart = chunk.reset().position();
+            byte[] memory = chunk.array();
 
-            for (int i = readStart, limit = chunk.limit(); i < limit; i++) {
-                final byte c = chunk.get(i);
+            for (int i = readStart; i < limit; i++) {
+                final byte c = memory[i];
 
                 if (c == '\r' || c == '\n') {
 
@@ -74,21 +87,15 @@ public class LineReader implements Publisher<ByteBuffer> {
                         }
                     }
 
-                    chunk.position(lineStart).limit(i);
+                    chunk.limit(i).position(lineStart);
                     request.send(chunk);
 
-                    chunk.limit(limit);
                     lineStart = i + 1;
 
                     if (!request.isActive()) break;
                 }
             }
-
-            if (request.isActive()) {
-                lastChunk = chunk.position(lineStart).mark();
-            } else {
-                interrupter.run();
-            }
+            return lineStart;
         }
 
         @Override
@@ -161,15 +168,14 @@ public class LineReader implements Publisher<ByteBuffer> {
     static final class MemoryAllocator implements Supplier<ByteBuffer> {
 
         private static final int PAGE_SIZE = 4096;
-        private static final int DIRECT_MEMORY_SIZE = 8 * PAGE_SIZE;
+        private static final int GENERAL_MEMORY_SIZE = 8 * PAGE_SIZE;
 
-        private ByteBuffer heap;
-        private final ByteBuffer direct;
+        private ByteBuffer temporal;
+        private final ByteBuffer general;
 
         MemoryAllocator() {
-            direct = ByteBuffer
-                    .allocateDirect(DIRECT_MEMORY_SIZE)
-                    .order(ByteOrder.nativeOrder())
+            general = ByteBuffer
+                    .allocate(GENERAL_MEMORY_SIZE)
                     .limit(0)
                     .mark();
         }
@@ -180,12 +186,12 @@ public class LineReader implements Publisher<ByteBuffer> {
             if (tryAddPage(memory) || tryCompact(memory)) {
                 return memory;
             } else {
-                return swapToHeap(memory);
+                return swapToTemporal(memory);
             }
         }
 
         private ByteBuffer fetchMemory() {
-            return heap == null ? direct : trySwapToDirect();
+            return temporal == null ? general : trySwapToGeneral();
         }
 
         private boolean tryAddPage(ByteBuffer memory) {
@@ -220,19 +226,22 @@ public class LineReader implements Publisher<ByteBuffer> {
             memory.position(0).mark();
         }
 
-        private ByteBuffer trySwapToDirect() {
-            if (heap.limit() - heap.reset().position() > (DIRECT_MEMORY_SIZE - PAGE_SIZE)) return heap;
+        private ByteBuffer trySwapToGeneral() {
+            if (temporal.limit() - temporal.reset().position() > (GENERAL_MEMORY_SIZE - PAGE_SIZE)) {
+                return temporal;
+            }
+            general.position(0);
+            general.put(temporal);
+            prepareForRead(general);
+            general.limit(temporal.limit() - temporal.reset().position());
 
-            direct.position(0);
-            direct.put(heap);
-            prepareForRead(direct);
-            direct.limit(heap.limit() - heap.reset().position());
-
-            heap = null;
-            return direct;
+            temporal = null;
+            return general;
         }
 
-        private ByteBuffer swapToHeap(ByteBuffer memory) {
+        private ByteBuffer swapToTemporal(ByteBuffer memory) {
+            Logger.getLogger("MemoryAllocator").warning("Using additional memory!");
+
             final int payload = memory.capacity() - memory.position();
 
             final ByteBuffer target = ByteBuffer
@@ -242,7 +251,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             prepareForRead(target);
             addPage(target, payload);
 
-            heap = target;
+            temporal = target;
             return target;
         }
     }

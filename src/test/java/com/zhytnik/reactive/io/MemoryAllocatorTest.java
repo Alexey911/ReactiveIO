@@ -16,11 +16,6 @@ public class MemoryAllocatorTest {
     MemoryAllocator allocator = new MemoryAllocator();
 
     @Test
-    public void allocatesDirectMemory() {
-        assertThat(allocator.get().isDirect()).isTrue();
-    }
-
-    @Test
     public void firstAllocatedMemoryHasMarkedStart() {
         assertThat(allocator.get().reset().position()).isEqualTo(0);
     }
@@ -53,7 +48,7 @@ public class MemoryAllocatorTest {
     }
 
     @Test
-    public void compactsDirectMemory() {
+    public void compactsMemory() {
         assertThat(allocator.get().position()).isEqualTo(0);
         assertThat(allocator.get().position()).isEqualTo(4096);
         assertThat(allocator.get().position()).isEqualTo(2 * 4096);
@@ -72,21 +67,22 @@ public class MemoryAllocatorTest {
     }
 
     @Test
-    public void directMemoryIsLimitedBy32KB() {
-        assertThat(allocator.get().isDirect());
-        assertThat(allocator.get().isDirect());
-        assertThat(allocator.get().isDirect());
-        assertThat(allocator.get().isDirect());
-        assertThat(allocator.get().isDirect());
-        assertThat(allocator.get().isDirect());
-        assertThat(allocator.get().isDirect());
-        assertThat(allocator.get().isDirect());
+    public void generalMemoryIsLimitedBy32KB() {
+        final ByteBuffer general = allocator.get();
 
-        assertThat(allocator.get().isDirect()).isFalse();
+        assertThat(allocator.get()).isEqualTo(general);
+        assertThat(allocator.get()).isEqualTo(general);
+        assertThat(allocator.get()).isEqualTo(general);
+        assertThat(allocator.get()).isEqualTo(general);
+        assertThat(allocator.get()).isEqualTo(general);
+        assertThat(allocator.get()).isEqualTo(general);
+        assertThat(allocator.get()).isEqualTo(general);
+
+        assertThat(allocator.get()).isNotEqualTo(general);
     }
 
     @Test
-    public void swapDataToHeapWhenDirectMemoryLimitIsReached() {
+    public void triesToDoSwapWhenGeneralMemoryLimitIsReached() {
         allocator.get();
 
         allocator.get().put((byte) 77);
@@ -100,7 +96,6 @@ public class MemoryAllocatorTest {
 
         final ByteBuffer swapped = allocator.get();
 
-        assertThat(swapped.isDirect()).isFalse();
         assertThat(swapped.position()).isEqualTo(8 * 4096);
         assertThat(swapped.limit()).isEqualTo(8 * 4096 + 4096);
         assertThat(swapped.reset().position()).isEqualTo(0);
@@ -109,8 +104,8 @@ public class MemoryAllocatorTest {
     }
 
     @Test
-    public void alwaysTriesToUseDirectMemory() {
-        allocator.get();
+    public void alwaysTriesToUseGeneralMemory() {
+        final ByteBuffer general = allocator.get();
 
         allocator
                 .get()
@@ -126,20 +121,20 @@ public class MemoryAllocatorTest {
 
         final ByteBuffer compacted = allocator.get();
 
-        assertThat(compacted.isDirect()).isTrue();
+        assertThat(compacted).isEqualTo(general);
         assertThat(compacted.position()).isEqualTo(8 * 4096 - 4096 - 777);
         assertThat(compacted.limit()).isEqualTo(8 * 4096 - 777);
         assertThat(compacted.reset().position()).isEqualTo(0);
         assertThat(compacted.get()).isEqualTo((byte) 9);
 
-        final ByteBuffer heapMemory = allocator.get();
+        final ByteBuffer temporal = allocator.get();
 
-        assertThat(heapMemory.isDirect()).isFalse();
-        heapMemory.position(heapMemory.limit() - 1).mark().put((byte) 7);
+        assertThat(temporal).isNotEqualTo(general);
+        temporal.position(temporal.limit() - 1).mark().put((byte) 7);
 
         final ByteBuffer swapped = allocator.get();
 
-        assertThat(swapped.isDirect());
+        assertThat(swapped).isEqualTo(general);
         assertThat(swapped.position()).isEqualTo(1);
         assertThat(swapped.limit()).isEqualTo(1 + 4096);
         assertThat(swapped.reset().position()).isEqualTo(0);
