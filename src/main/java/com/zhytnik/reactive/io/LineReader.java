@@ -166,10 +166,11 @@ public class LineReader implements Publisher<ByteBuffer> {
     }
 
     /**
-     * Allocates memory by 4096-byte pages for file reading and saves bytes used by LineParser.
-     * Always tries to reuse general memory and can do its compressions between allocations,
-     * in the case of lack of general memory it will start to use as much new memory as needed
-     * with attempts to back to use of general memory.
+     * Allocates memory by 4096-byte regions for file reading, keeps bytes used by LineParser.
+     * When general memory capacity is reached it tries to do compression and reuse,
+     * otherwise it will use as much memory as needed with attempts to use general memory again.
+     *
+     * @author Alexey Zhytnik
      */
     static final class MemoryAllocator implements Supplier<ByteBuffer> {
 
@@ -187,9 +188,9 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         /**
-         * Returns a ByteBuffer with clean bytes between its position (inclusive) and limit.
-         * At the moment of next call it will save previously returned bytes from
-         * mark (inclusive) to limit, but those positions could be changed in future.
+         * Returns a ByteBuffer with clean bytes from position (inclusive) to limit.
+         * Between calls keeps previously returned bytes from mark (inclusive) to limit,
+         * but their place in memory and itself memory could be changed.
          */
         @Override
         public ByteBuffer get() {
@@ -251,8 +252,8 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         /**
-         * The worst use case:
-         * the call means existence of a line which is greater than 32768 characters.
+         * Makes swap into bigger memory region, usually is never called.
+         * Exists for worst use case: processing of a line which is greater than 32768 characters.
          */
         private ByteBuffer swapToTemporal(ByteBuffer memory) {
             Logger.getLogger("MemoryAllocator").warning("Using additional memory!");
