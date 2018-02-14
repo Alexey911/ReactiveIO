@@ -2,7 +2,6 @@ package com.zhytnik.reactive.io;
 
 import java.io.Closeable;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.file.Path;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
@@ -177,7 +176,6 @@ public class LineReader implements Publisher<ByteBuffer> {
         MemoryAllocator() {
             general = ByteBuffer
                     .allocate(GENERAL_MEMORY_SIZE)
-                    .order(ByteOrder.nativeOrder())
                     .limit(0)
                     .mark();
         }
