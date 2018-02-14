@@ -165,6 +165,12 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
     }
 
+    /**
+     * Allocates memory by 4096-byte pages for file reading and saves bytes used by LineParser.
+     * Always tries to reuse general memory and can do its compressions between allocations,
+     * in the case of lack of general memory it will start to use as much new memory as needed
+     * with attempts to back to use of general memory.
+     */
     static final class MemoryAllocator implements Supplier<ByteBuffer> {
 
         private static final int PAGE_SIZE = 4096;
@@ -180,10 +186,15 @@ public class LineReader implements Publisher<ByteBuffer> {
                     .mark();
         }
 
+        /**
+         * Returns a ByteBuffer with clean bytes between its position (inclusive) and limit.
+         * At the moment of next call it will save previously returned bytes from
+         * mark (inclusive) to limit, but those positions could be changed in future.
+         */
         @Override
         public ByteBuffer get() {
             final ByteBuffer memory = fetchMemory();
-            if (tryAddPage(memory) || tryCompact(memory)) {
+            if (tryAddCleanPage(memory) || tryCompact(memory)) {
                 return memory;
             } else {
                 return swapToTemporal(memory);
@@ -194,9 +205,9 @@ public class LineReader implements Publisher<ByteBuffer> {
             return temporal == null ? general : trySwapToGeneral();
         }
 
-        private boolean tryAddPage(ByteBuffer memory) {
+        private boolean tryAddCleanPage(ByteBuffer memory) {
             if (memory.capacity() - memory.limit() >= PAGE_SIZE) {
-                addPage(memory, memory.limit());
+                addCleanPage(memory, memory.limit());
                 return true;
             }
             return false;
@@ -210,7 +221,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             return false;
         }
 
-        private void addPage(ByteBuffer memory, int to) {
+        private void addCleanPage(ByteBuffer memory, int to) {
             memory.position(to).limit(to + PAGE_SIZE);
         }
 
@@ -219,7 +230,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
             memory.compact();
             prepareForRead(memory);
-            addPage(memory, payload);
+            addCleanPage(memory, payload);
         }
 
         private void prepareForRead(ByteBuffer memory) {
@@ -239,6 +250,10 @@ public class LineReader implements Publisher<ByteBuffer> {
             return general;
         }
 
+        /**
+         * The worst use case:
+         * the call means existence of a line which is greater than 32768 characters.
+         */
         private ByteBuffer swapToTemporal(ByteBuffer memory) {
             Logger.getLogger("MemoryAllocator").warning("Using additional memory!");
 
@@ -249,7 +264,7 @@ public class LineReader implements Publisher<ByteBuffer> {
                     .put(memory);
 
             prepareForRead(target);
-            addPage(target, payload);
+            addCleanPage(target, payload);
 
             temporal = target;
             return target;
