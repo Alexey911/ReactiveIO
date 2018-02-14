@@ -132,7 +132,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             if (lines == Long.MAX_VALUE) {
                 unbounded = true;
             } else if (lines >= 0) {
-                remain += lines;
+                remain = Math.addExact(remain, lines);
             } else {
                 onError(new IllegalArgumentException("Requested line count should not be negative!"));
             }

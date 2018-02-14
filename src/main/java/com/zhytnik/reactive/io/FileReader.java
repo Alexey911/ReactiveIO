@@ -82,7 +82,7 @@ public class FileReader implements Publisher<ByteBuffer> {
             if (allocator == null) {
                 interrupted = true;
                 subscriber.onError(new IllegalStateException("Memory allocator isn't installed!"));
-            } else if (bytes == Long.MAX_VALUE || limit + bytes <= max) {
+            } else if (bytes == Long.MAX_VALUE || Math.addExact(limit, bytes) <= max) {
                 limit = Math.min(limit + bytes, max);
             } else {
                 interrupted = true;
