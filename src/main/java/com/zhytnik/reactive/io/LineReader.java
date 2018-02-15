@@ -27,6 +27,19 @@ public class LineReader implements Publisher<ByteBuffer> {
         this.path = path;
     }
 
+    /**
+     * Reads the file by lines. Before invocation of {@link Subscription#request(long)}
+     * doesn't consume any resources. Reads only requested count of lines,
+     * a value of {@code Long.MAX_VALUE} is request to read all lines.
+     * Throws {@link IllegalArgumentException} on negative values of requests.
+     * Invokes {@link Subscriber#onNext(Object)} with line which is placed from
+     * position (inclusive) to limit, in case of empty files it never invokes this method.
+     * Warning: do not change bytes after limit position (inclusive) and
+     * bytes of each line exist only inside invoked body of {@link Subscriber#onNext(Object)}.
+     *
+     * @param subscriber the subscriber-reader
+     * @see FileReader
+     */
     @Override
     public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
         try (final ParseRequest r = new ParseRequest(subscriber)) {
@@ -75,7 +88,7 @@ public class LineReader implements Publisher<ByteBuffer> {
          * them to the {@link ParseRequest#subscriber}.
          * Between invocations saves start of last line at mark position.
          * Subscription cancellation stops file reading and
-         * produces releasing used resources.
+         * produces releasing related resources.
          *
          * @param chunk a file content from {@link FileReader}
          */

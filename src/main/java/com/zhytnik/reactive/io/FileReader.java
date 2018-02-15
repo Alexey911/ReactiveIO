@@ -31,19 +31,17 @@ public class FileReader implements Publisher<ByteBuffer> {
     }
 
     /**
-     * Enables file reading. Fails fast on any {@link IOException},
+     * Activates file reading. Fails fast on any {@link IOException},
      * even before invocation of {@link Subscriber#onSubscribe(Subscription)}.
      * Reads file content by ByteBuffers provided by custom memory allocator until
      * requested byte count is read. Invokes {@link Subscriber#onNext(Object)}
      * only with content which is placed from position (inclusive) to limit.
      * Never invokes {@link Subscriber#onNext(Object)} without file content.
-     *
      * Warning: the file content should not be modified during subscription,
      * otherwise the result of the execution is undefined.
      *
-     * @see ReadSubscription
-     *
      * @param subscriber the subscriber-reader
+     * @see ReadSubscription
      */
     @Override
     public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
@@ -86,8 +84,8 @@ public class FileReader implements Publisher<ByteBuffer> {
          * Adds bytes for reading. Needs installed memory allocator,
          * otherwise throws {@link IllegalStateException}.
          * A value of {@code Long.MAX_VALUE} is request to read all file,
-         * in other cases if requested byte count is greater than the file's size then
-         * {@link IllegalArgumentException} will be thrown.
+         * in other cases if requested byte count is negative or greater
+         * than the file's size then {@link IllegalArgumentException} will be thrown.
          *
          * @param bytes the additional count of bytes for read
          */
@@ -95,7 +93,7 @@ public class FileReader implements Publisher<ByteBuffer> {
         void request(long bytes);
 
         /**
-         * Stops reading, all used resources will be released after invoking.
+         * Stops reading, all related resources will be released after invoking.
          */
         @Override
         void cancel();
@@ -141,8 +139,10 @@ public class FileReader implements Publisher<ByteBuffer> {
             if (allocator == null) {
                 interrupted = true;
                 subscriber.onError(new IllegalStateException("Memory allocator isn't installed!"));
-            } else if (bytes == Long.MAX_VALUE || Math.addExact(limit, bytes) <= max) {
-                limit = Math.min(limit + bytes, max);
+            } else if (bytes == Long.MAX_VALUE) {
+                limit = max;
+            } else if (bytes >= 0 && Math.addExact(limit, bytes) <= max) {
+                limit += bytes;
             } else {
                 interrupted = true;
                 subscriber.onError(new IllegalArgumentException("The resource contains only " + max + " bytes!"));
