@@ -10,7 +10,7 @@ import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 /**
- * Line by line file reader which reads requested line count.
+ * A line by line file reader which reads requested line count.
  *
  * @author Alexey Zhytnik
  */
@@ -21,7 +21,7 @@ public class LineReader implements Publisher<ByteBuffer> {
     /**
      * Constructs a LineReader associated with the file.
      *
-     * @param path the path to file for line by line reading
+     * @param path the path to file for reading
      */
     public LineReader(Path path) {
         this.path = path;
@@ -32,18 +32,19 @@ public class LineReader implements Publisher<ByteBuffer> {
         try (final ParseRequest r = new ParseRequest(subscriber)) {
             subscriber.onSubscribe(r);
 
-            final FileReader reader = new FileReader(path);
-            final LineParser parser = new LineParser(r);
-
-            if (r.isActive()) reader.subscribe(parser);
+            if (r.isActive()) {
+                final FileReader reader = new FileReader(path);
+                final LineParser parser = new LineParser(r);
+                reader.subscribe(parser);
+            }
         } catch (Exception e) {
             subscriber.onError(e);
         }
     }
 
     /**
-     * Represents a FileReader subscriber that parses text lines and
-     * redirects them to LineReader's subscriber.
+     * Represents a FileReader subscriber which parses lines and
+     * sends them to LineReader's subscriber.
      *
      * @author Alexey Zhytnik
      */
@@ -69,10 +70,19 @@ public class LineReader implements Publisher<ByteBuffer> {
             interrupter = s::cancel;
         }
 
+        /**
+         * Parses file content into lines and sends
+         * them to the {@link ParseRequest#subscriber}.
+         * Between invocations saves start of last line at mark position.
+         * Subscription cancellation stops file reading and
+         * produces releasing used resources.
+         *
+         * @param chunk a file content from {@link FileReader}
+         */
         @Override
         public void onNext(ByteBuffer chunk) {
             int readLimit = chunk.limit();
-            int nextStart = read(chunk, readLimit);
+            int nextStart = parse(chunk, readLimit);
 
             if (request.isActive()) {
                 chunk.limit(readLimit);
@@ -82,7 +92,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             }
         }
 
-        private int read(ByteBuffer chunk, int limit) {
+        private int parse(ByteBuffer chunk, int limit) {
             int readStart = chunk.position();
             int lineStart = chunk.reset().position();
             byte[] memory = chunk.array();
@@ -115,7 +125,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         /**
          * Invoked when end of the file is reached.
-         * If previously loaded bytes were not fully sent,
+         * If previously loaded bytes weren't fully sent,
          * sends them to {@link ParseRequest#subscriber}
          */
         @Override
@@ -190,7 +200,7 @@ public class LineReader implements Publisher<ByteBuffer> {
     }
 
     /**
-     * Allocates memory by 4096-byte regions for file reading, keeps bytes used by LineParser.
+     * Allocates memory by 4096-byte regions for file reading, keeps bytes reserved by LineParser.
      * When general memory capacity isn't enough it tries to do compression and reuse,
      * otherwise it will use as much memory as needed with attempts to use general memory again.
      *

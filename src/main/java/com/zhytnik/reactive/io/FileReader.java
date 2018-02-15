@@ -12,7 +12,8 @@ import java.util.concurrent.Flow.Subscription;
 import java.util.function.Supplier;
 
 /**
- * File reader which reads requested bytes of files by {@link ByteBuffer}.
+ * A file reader which reads requested bytes of files by {@link ByteBuffer}.
+ * Needs custom memory provider {@link ReadSubscription#setAllocator(Supplier)}.
  *
  * @author Alexey Zhytnik
  */
@@ -32,10 +33,10 @@ public class FileReader implements Publisher<ByteBuffer> {
     /**
      * Enables file reading. Fails fast on any {@link IOException},
      * even before invocation of {@link Subscriber#onSubscribe(Subscription)}.
-     * Reads file content by ByteBuffers provided by memory allocator until
+     * Reads file content by ByteBuffers provided by custom memory allocator until
      * requested byte count is read. Invokes {@link Subscriber#onNext(Object)}
-     * only with data which are placed from position (inclusive) to limit.
-     * Never invokes {@link Subscriber#onNext(Object)} with empty ByteBuffers.
+     * only with content which is placed from position (inclusive) to limit.
+     * Never invokes {@link Subscriber#onNext(Object)} without file content.
      *
      * Warning: the file content should not be modified during subscription,
      * otherwise the result of the execution is undefined.
@@ -74,8 +75,8 @@ public class FileReader implements Publisher<ByteBuffer> {
         /**
          * Installs memory allocator which provides a memory for file reading.
          * Each invocation of memory allocator should return a ByteBuffer whose bytes
-         * from position (inclusive) to limit are available for writing file content,
-         * but not all that available bytes will be really used, limit position could be decreased.
+         * from position (inclusive) to limit will be used for writing file content,
+         * but not all that bytes will be really used, limit position could be decreased.
          *
          * @param allocator the memory allocator
          */
