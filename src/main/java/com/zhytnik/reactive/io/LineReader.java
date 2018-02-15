@@ -31,7 +31,9 @@ public class LineReader implements Publisher<ByteBuffer> {
      * Reads the file by lines. Before invocation of {@link Subscription#request(long)}
      * doesn't consume any resources. Reads only requested count of lines,
      * a value of {@code Long.MAX_VALUE} is request to read all lines.
-     * Throws {@link IllegalArgumentException} on negative values of requests.
+     * If at the end of the file requested line count isn't reached then
+     * {@link RuntimeException} will be thrown, also throws
+     * {@link IllegalArgumentException} on negative values of requests.
      * Invokes {@link Subscriber#onNext(Object)} with line which is placed from
      * position (inclusive) to limit, in case of empty files it never invokes this method.
      * Warning: do not change bytes after limit position (inclusive) and
