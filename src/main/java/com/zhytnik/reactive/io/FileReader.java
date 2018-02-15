@@ -12,17 +12,35 @@ import java.util.concurrent.Flow.Subscription;
 import java.util.function.Supplier;
 
 /**
+ * File reader which reads requested bytes of files by {@link ByteBuffer}.
+ *
  * @author Alexey Zhytnik
- * @since 24.01.2018
  */
 public class FileReader implements Publisher<ByteBuffer> {
 
     private final Path path;
 
+    /**
+     * Creates FileReader associated with a file.
+     *
+     * @param path the path to file for reading
+     */
     public FileReader(Path path) {
         this.path = path;
     }
 
+    /**
+     * Enables file reading. Fails fast on any {@link IOException},
+     * even before invocation of {@link Subscriber#onSubscribe(Subscription)}.
+     * Reads file's content by ByteBuffers provided by memory allocator until
+     * requested byte count is read. Invokes {@link Subscriber#onNext(Object)}
+     * only with data which are placed from position (inclusive) to limit.
+     * Never invokes {@link Subscriber#onNext(Object)} with empty ByteBuffers.
+     *
+     * @see ReadSubscription
+     *
+     * @param subscriber the subscriber-reader
+     */
     @Override
     public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
         try (final ReadRequest r = new ReadRequest(path, subscriber)) {
@@ -43,7 +61,41 @@ public class FileReader implements Publisher<ByteBuffer> {
         }
     }
 
-    public static final class ReadRequest implements Subscription, Closeable {
+    /**
+     * Represents a file reading subscription.
+     *
+     * @author Alexey Zhytnik
+     */
+    public interface ReadSubscription extends Subscription {
+
+        /**
+         * Installs memory allocator which provides a memory for file reading.
+         * Each invocation of memory allocator should return a ByteBuffer whose bytes
+         * from position (inclusive) to limit are available for writing file's content,
+         * but not all that available bytes will be really used, limit position could be decreased.
+         *
+         * @param allocator the memory allocator
+         */
+        void setAllocator(Supplier<ByteBuffer> allocator);
+
+        /**
+         * Adds bytes for reading. Needs installed memory allocator,
+         * otherwise throws {@link IllegalStateException}.
+         * A value of {@code Long.MAX_VALUE} is request to read all file,
+         * in other cases if requested byte count is greater than the file's size then
+         * {@link IllegalArgumentException} will be thrown.
+         *
+         * @param bytes the additional count of bytes for read
+         */
+        void request(long bytes);
+
+        /**
+         * Stops reading, all used resources will be released after invoking.
+         */
+        void cancel();
+    }
+
+    private static final class ReadRequest implements ReadSubscription, Closeable {
 
         private long limit;
         private long position;
@@ -61,6 +113,7 @@ public class FileReader implements Publisher<ByteBuffer> {
             this.subscriber = subscriber;
         }
 
+        @Override
         public void setAllocator(Supplier<ByteBuffer> allocator) {
             this.allocator = allocator;
         }

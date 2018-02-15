@@ -47,9 +47,12 @@ public class LineReader implements Publisher<ByteBuffer> {
             this.request = request;
         }
 
+        /**
+         * Requests the whole file reading.
+         */
         @Override
         public void onSubscribe(Subscription s) {
-            ((FileReader.ReadRequest) s).setAllocator(new MemoryAllocator());
+            ((FileReader.ReadSubscription) s).setAllocator(new MemoryAllocator());
             s.request(Long.MAX_VALUE);
             interrupter = s::cancel;
         }
@@ -105,6 +108,10 @@ public class LineReader implements Publisher<ByteBuffer> {
             }
         }
 
+        /**
+         * Redirects FileReader's exceptions
+         * to the {@link ParseRequest#subscriber}.
+         */
         @Override
         public void onError(Throwable e) {
             request.onError(e);
@@ -167,7 +174,7 @@ public class LineReader implements Publisher<ByteBuffer> {
 
     /**
      * Allocates memory by 4096-byte regions for file reading, keeps bytes used by LineParser.
-     * When general memory capacity is reached it tries to do compression and reuse,
+     * When general memory capacity isn't enough it tries to do compression and reuse,
      * otherwise it will use as much memory as needed with attempts to use general memory again.
      *
      * @author Alexey Zhytnik
@@ -189,8 +196,10 @@ public class LineReader implements Publisher<ByteBuffer> {
 
         /**
          * Returns a ByteBuffer with clean bytes from position (inclusive) to limit.
-         * Between calls keeps previously returned bytes from mark (inclusive) to limit,
+         * Between invokes keeps previously returned bytes from mark (inclusive) to limit,
          * but their place in memory and itself memory could be changed.
+         *
+         * @return a ByteBuffer which contains 4096 clean bytes for file reading.
          */
         @Override
         public ByteBuffer get() {
@@ -252,7 +261,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         /**
-         * Makes swap into bigger memory region, usually is never called.
+         * Makes swap into bigger memory region, usually is never invoked.
          * Exists for worst use case: processing of a line which is greater than 32768 characters.
          */
         private ByteBuffer swapToTemporal(ByteBuffer memory) {

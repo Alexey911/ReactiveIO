@@ -144,7 +144,7 @@ public class FileReaderTest {
         public void onSubscribe(Flow.Subscription s) {
             super.onSubscribe(s);
 
-            ((FileReader.ReadRequest) s).setAllocator(allocator);
+            ((FileReader.ReadSubscription) s).setAllocator(allocator);
             doRequest();
         }
 
