@@ -10,13 +10,19 @@ import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 /**
+ * Line by line file reader which reads requested line count.
+ *
  * @author Alexey Zhytnik
- * @since 24.01.2018
  */
 public class LineReader implements Publisher<ByteBuffer> {
 
     private final Path path;
 
+    /**
+     * Constructs a LineReader associated with the file.
+     *
+     * @param path the path to file for line by line reading
+     */
     public LineReader(Path path) {
         this.path = path;
     }
@@ -35,6 +41,12 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
     }
 
+    /**
+     * Represents a FileReader subscriber that parses text lines and
+     * redirects them to LineReader's subscriber.
+     *
+     * @author Alexey Zhytnik
+     */
     private static final class LineParser implements Subscriber<ByteBuffer> {
 
         private boolean ignoreLF;
@@ -48,7 +60,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         /**
-         * Requests the whole file reading.
+         * Requests reading of the whole file.
          */
         @Override
         public void onSubscribe(Subscription s) {
@@ -101,6 +113,11 @@ public class LineReader implements Publisher<ByteBuffer> {
             return lineStart;
         }
 
+        /**
+         * Invoked when end of the file is reached.
+         * If previously loaded bytes were not fully sent,
+         * sends them to {@link ParseRequest#subscriber}
+         */
         @Override
         public void onComplete() {
             if (lastChunk != null && lastChunk.reset().hasRemaining()) {
@@ -109,7 +126,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         /**
-         * Redirects FileReader's exceptions
+         * Redirects FileReader's exceptions and errors
          * to the {@link ParseRequest#subscriber}.
          */
         @Override

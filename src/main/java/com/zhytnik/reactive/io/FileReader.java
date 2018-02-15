@@ -21,7 +21,7 @@ public class FileReader implements Publisher<ByteBuffer> {
     private final Path path;
 
     /**
-     * Creates FileReader associated with a file.
+     * Constructs a FileReader associated with the file.
      *
      * @param path the path to file for reading
      */
@@ -32,10 +32,13 @@ public class FileReader implements Publisher<ByteBuffer> {
     /**
      * Enables file reading. Fails fast on any {@link IOException},
      * even before invocation of {@link Subscriber#onSubscribe(Subscription)}.
-     * Reads file's content by ByteBuffers provided by memory allocator until
+     * Reads file content by ByteBuffers provided by memory allocator until
      * requested byte count is read. Invokes {@link Subscriber#onNext(Object)}
      * only with data which are placed from position (inclusive) to limit.
      * Never invokes {@link Subscriber#onNext(Object)} with empty ByteBuffers.
+     *
+     * Warning: the file content should not be modified during subscription,
+     * otherwise the result of the execution is undefined.
      *
      * @see ReadSubscription
      *
@@ -71,7 +74,7 @@ public class FileReader implements Publisher<ByteBuffer> {
         /**
          * Installs memory allocator which provides a memory for file reading.
          * Each invocation of memory allocator should return a ByteBuffer whose bytes
-         * from position (inclusive) to limit are available for writing file's content,
+         * from position (inclusive) to limit are available for writing file content,
          * but not all that available bytes will be really used, limit position could be decreased.
          *
          * @param allocator the memory allocator
@@ -87,11 +90,13 @@ public class FileReader implements Publisher<ByteBuffer> {
          *
          * @param bytes the additional count of bytes for read
          */
+        @Override
         void request(long bytes);
 
         /**
          * Stops reading, all used resources will be released after invoking.
          */
+        @Override
         void cancel();
     }
 
