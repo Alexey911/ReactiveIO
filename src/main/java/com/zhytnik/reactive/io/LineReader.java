@@ -2,6 +2,7 @@ package com.zhytnik.reactive.io;
 
 import java.io.Closeable;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
@@ -10,7 +11,15 @@ import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 /**
- * A line by line file reader which reads requested line count.
+ * A line by line file reader which reads requested lines by {@link ByteBuffer}.
+ * Lazily reads lines and almost always uses only 32KB of memory.
+ * Uses additional memory only in case of lines that are greater than 32768 characters).
+ * Detects lines that terminated by any one of a line feed ('\n'), a carriage return ('\r'),
+ * a carriage return followed immediately by a line feed, or by reaching the end-of-file.
+ * Supported charsets:
+ * {@link StandardCharsets#UTF_8 UTF-8},
+ * {@link StandardCharsets#US_ASCII US-ASCII},
+ * {@link StandardCharsets#ISO_8859_1 ISO-8859-1}.
  *
  * @author Alexey Zhytnik
  */
@@ -58,7 +67,7 @@ public class LineReader implements Publisher<ByteBuffer> {
     }
 
     /**
-     * Thrown to indicate that EOF was reached without all requested lines.
+     * Thrown to indicate that end-of-file was reached without all requested lines.
      *
      * @author Alexey Zhytnik
      */
