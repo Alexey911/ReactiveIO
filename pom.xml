@@ -8,6 +8,11 @@
     <groupId>com.zhytnik</groupId>
     <artifactId>reactive</artifactId>
     <version>0.1-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>ReactiveIO</name>
+    <description>Reactive file readers</description>
+    <url>https://github.com/Alexey911/ReactiveIO</url>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -39,6 +44,13 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <developers>
+        <developer>
+            <name>Alexey Zhytnik</name>
+            <email>alexeyzhytnik@gmail.com</email>
+        </developer>
+    </developers>
 
     <build>
         <plugins>
