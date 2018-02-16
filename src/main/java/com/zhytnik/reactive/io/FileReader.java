@@ -31,8 +31,7 @@ public class FileReader implements Publisher<ByteBuffer> {
     }
 
     /**
-     * Reads the file. Fails fast on any {@link IOException},
-     * even before invocation of {@link Subscriber#onSubscribe(Subscription)}.
+     * Reads the file. Fails fast on any {@link IOException}.
      * Reads file content by ByteBuffers provided by custom memory allocator until
      * requested byte count is read. Invokes {@link Subscriber#onNext(Object)}
      * only with content which is placed from position (inclusive) to limit,
@@ -47,6 +46,8 @@ public class FileReader implements Publisher<ByteBuffer> {
     public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
         try (final ReadRequest r = new ReadRequest(path, subscriber)) {
             subscriber.onSubscribe(r);
+
+            if (r.isActive()) r.tryInitialize();
 
             while (r.isActive()) {
                 final ByteBuffer chunk = r.allocator.get();
@@ -101,20 +102,29 @@ public class FileReader implements Publisher<ByteBuffer> {
 
     private static final class ReadRequest implements ReadSubscription, Closeable {
 
+        private long max;
         private long limit;
         private long position;
         private boolean interrupted;
-
-        private final long max;
-        private final FileChannel resource;
-        private final Subscriber subscriber;
-
+        private FileChannel resource;
         private Supplier<ByteBuffer> allocator;
 
-        private ReadRequest(Path path, Subscriber subscriber) throws IOException {
-            this.resource = FileChannel.open(path, StandardOpenOption.READ);
-            this.max = resource.size();
+        private final Path path;
+        private final Subscriber subscriber;
+
+        private ReadRequest(Path path, Subscriber subscriber) {
+            this.path = path;
+            this.max = Long.MAX_VALUE;
             this.subscriber = subscriber;
+        }
+
+        private void tryInitialize() throws IOException {
+            resource = FileChannel.open(path, StandardOpenOption.READ);
+            max = resource.size();
+
+            long requestedBytes = limit;
+            limit = 0;
+            request(requestedBytes);
         }
 
         @Override
@@ -137,16 +147,19 @@ public class FileReader implements Publisher<ByteBuffer> {
         @Override
         public void request(long bytes) {
             if (allocator == null) {
-                interrupted = true;
-                subscriber.onError(new IllegalStateException("Memory allocator isn't installed!"));
+                onError(new IllegalStateException("Memory allocator isn't installed!"));
             } else if (bytes == Long.MAX_VALUE) {
                 limit = max;
             } else if (bytes >= 0 && Math.addExact(limit, bytes) <= max) {
                 limit += bytes;
             } else {
-                interrupted = true;
-                subscriber.onError(new IllegalArgumentException("The file contains only " + max + " bytes!"));
+                onError(new IllegalArgumentException(path + " contains only " + max + " bytes!"));
             }
+        }
+
+        private void onError(Throwable error) {
+            interrupted = true;
+            subscriber.onError(error);
         }
 
         @Override
@@ -155,8 +168,14 @@ public class FileReader implements Publisher<ByteBuffer> {
         }
 
         @Override
-        public void close() throws IOException {
-            resource.close();
+        public void close() {
+            if (resource != null) {
+                try {
+                    resource.close();
+                } catch (IOException e) {
+                    if (!interrupted) onError(e);
+                }
+            }
 
             if (!interrupted && position == limit) {
                 subscriber.onComplete();

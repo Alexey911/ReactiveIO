@@ -48,7 +48,7 @@ public abstract class BaseAssertionSubscriber<T, R> implements Subscriber<T> {
     @Override
     @SuppressWarnings("unchecked")
     public void onError(Throwable error) {
-        if (!failed && !completed && !cancelled) {
+        if (subscribed && !failed && !completed && !cancelled) {
             failed = true;
 
             if (expectedError == null || !expectedError.isAssignableFrom(error.getClass())) {
