@@ -32,12 +32,12 @@ public class LineReader implements Publisher<ByteBuffer> {
      * doesn't consume any resources. Reads only requested count of lines,
      * a value of {@code Long.MAX_VALUE} is request to read all lines.
      * If at the end of the file requested line count isn't reached then
-     * {@link RuntimeException} will be thrown, also throws
+     * {@link NoSuchLineCountException} will be thrown, also throws
      * {@link IllegalArgumentException} on negative values of requests.
-     * Invokes {@link Subscriber#onNext(Object)} with line which is placed from
-     * position (inclusive) to limit, in case of empty files it never invokes this method.
-     * Warning: do not change bytes after limit position (inclusive) and
-     * bytes of each line exist only inside invoked body of {@link Subscriber#onNext(Object)}.
+     * Invokes {@link Subscriber#onNext(Object)} with a line which is placed from
+     * position (inclusive) to limit, in case of empty files this method is never invoked.
+     * Warnings: bytes of each line exist only inside invoked body of
+     * {@link Subscriber#onNext(Object)}, do not change bytes after limit position (inclusive).
      *
      * @param subscriber the subscriber-reader
      * @see FileReader
@@ -58,8 +58,19 @@ public class LineReader implements Publisher<ByteBuffer> {
     }
 
     /**
+     * Thrown to indicate that EOF was reached without all requested lines.
+     *
+     * @author Alexey Zhytnik
+     */
+    public static final class NoSuchLineCountException extends RuntimeException {
+        private NoSuchLineCountException(long remain) {
+            super("There's no more line for reading, remaining line count is " + remain + "!");
+        }
+    }
+
+    /**
      * Represents a FileReader subscriber which parses lines and
-     * sends them to LineReader's subscriber.
+     * sends them to a LineReader's subscriber.
      *
      * @author Alexey Zhytnik
      */
@@ -90,7 +101,7 @@ public class LineReader implements Publisher<ByteBuffer> {
          * them to the {@link ParseRequest#subscriber}.
          * Between invocations saves start of last line at mark position.
          * Subscription cancellation stops file reading and
-         * produces releasing related resources.
+         * produces releasing used resources.
          *
          * @param chunk a file content from {@link FileReader}
          */
@@ -141,7 +152,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         /**
          * Invoked when end of the file is reached.
          * If previously loaded bytes weren't fully sent,
-         * sends them to {@link ParseRequest#subscriber}
+         * sends them to the {@link ParseRequest#subscriber}
          */
         @Override
         public void onComplete() {
@@ -179,6 +190,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         @Override
         public void request(long lines) {
             if (lines == Long.MAX_VALUE) {
+                remain = 0;
                 unbounded = true;
             } else if (lines >= 0) {
                 remain = Math.addExact(remain, lines);
@@ -209,15 +221,16 @@ public class LineReader implements Publisher<ByteBuffer> {
             if (unbounded || remain == 0) {
                 subscriber.onComplete();
             } else {
-                subscriber.onError(new RuntimeException("There's no more line for reading!"));
+                subscriber.onError(new NoSuchLineCountException(remain));
             }
         }
     }
 
     /**
-     * Allocates memory by 4096-byte regions for file reading, keeps bytes reserved by LineParser.
-     * When general memory capacity isn't enough it tries to do compression and reuse,
-     * otherwise it will use as much memory as needed with attempts to use general memory again.
+     * Allocates memory by 4096-byte regions for file reading,
+     * keeps bytes reserved by LineParser. When general memory capacity isn't enough
+     * it tries to do compression and reuse, otherwise it will use
+     * as much memory as needed with attempts to use general memory again.
      *
      * @author Alexey Zhytnik
      */
@@ -303,8 +316,9 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         /**
-         * Makes swap into bigger memory region, usually is never invoked.
-         * Exists for worst use case: processing of a line which is greater than 32768 characters.
+         * Makes swap into a bigger memory region (usually is never invoked).
+         * Exists for the worst use case: processing of a line
+         * which is greater than 32768 characters.
          */
         private ByteBuffer swapToTemporal(ByteBuffer memory) {
             Logger.getLogger("MemoryAllocator").warning("Using additional memory!");

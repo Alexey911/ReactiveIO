@@ -35,8 +35,8 @@ public class FileReader implements Publisher<ByteBuffer> {
      * even before invocation of {@link Subscriber#onSubscribe(Subscription)}.
      * Reads file content by ByteBuffers provided by custom memory allocator until
      * requested byte count is read. Invokes {@link Subscriber#onNext(Object)}
-     * only with content which is placed from position (inclusive) to limit.
-     * Never invokes {@link Subscriber#onNext(Object)} without file content.
+     * only with content which is placed from position (inclusive) to limit,
+     * never invokes {@link Subscriber#onNext(Object)} without file content.
      * Warning: the file content should not be modified during subscription,
      * otherwise the result of the execution is undefined.
      *
@@ -74,7 +74,7 @@ public class FileReader implements Publisher<ByteBuffer> {
          * Installs memory allocator which provides a memory for file reading.
          * Each invocation of memory allocator should return a ByteBuffer whose bytes
          * from position (inclusive) to limit will be used for writing file content,
-         * but not all that bytes will be really used, limit position could be decreased.
+         * but not all that bytes will be really used and limit position could be decreased.
          *
          * @param allocator the memory allocator
          */
@@ -93,7 +93,7 @@ public class FileReader implements Publisher<ByteBuffer> {
         void request(long bytes);
 
         /**
-         * Stops reading, all related resources will be released after invoking.
+         * Stops reading, all used resources will be released after invoking.
          */
         @Override
         void cancel();
@@ -145,7 +145,7 @@ public class FileReader implements Publisher<ByteBuffer> {
                 limit += bytes;
             } else {
                 interrupted = true;
-                subscriber.onError(new IllegalArgumentException("The resource contains only " + max + " bytes!"));
+                subscriber.onError(new IllegalArgumentException("The file contains only " + max + " bytes!"));
             }
         }
 

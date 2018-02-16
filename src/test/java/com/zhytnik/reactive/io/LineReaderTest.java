@@ -69,7 +69,7 @@ public class LineReaderTest {
         );
 
         subscriber.request = 5;
-        reader.subscribe(subscriber.asExpected(RuntimeException.class));
+        reader.subscribe(subscriber.asExpected(LineReader.NoSuchLineCountException.class));
     }
 
     @Test
