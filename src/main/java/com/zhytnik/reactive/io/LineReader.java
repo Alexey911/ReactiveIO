@@ -131,6 +131,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             int readStart = chunk.position();
             int lineStart = chunk.reset().position();
             byte[] memory = chunk.array();
+            boolean skipLF = ignoreLF;
 
             for (int i = readStart; i < limit; i++) {
                 final byte c = memory[i];
@@ -138,9 +139,9 @@ public class LineReader implements Publisher<ByteBuffer> {
                 if (c == '\r' || c == '\n') {
 
                     if (c == '\r') {
-                        ignoreLF = true;
-                    } else if (ignoreLF) {
-                        ignoreLF = false;
+                        skipLF = true;
+                    } else if (skipLF) {
+                        skipLF = false;
                         if (lineStart == i) {
                             lineStart = i + 1;
                             continue;
@@ -155,6 +156,7 @@ public class LineReader implements Publisher<ByteBuffer> {
                     if (!request.isActive()) break;
                 }
             }
+            ignoreLF = skipLF;
             return lineStart;
         }
 
