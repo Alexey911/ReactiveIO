@@ -31,7 +31,7 @@ public class FileReader implements Publisher<ByteBuffer> {
     }
 
     /**
-     * Activates file reading. Fails fast on any {@link IOException},
+     * Reads the file. Fails fast on any {@link IOException},
      * even before invocation of {@link Subscriber#onSubscribe(Subscription)}.
      * Reads file content by ByteBuffers provided by custom memory allocator until
      * requested byte count is read. Invokes {@link Subscriber#onNext(Object)}
