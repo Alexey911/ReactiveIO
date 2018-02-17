@@ -13,7 +13,7 @@ import java.util.logging.Logger;
 /**
  * A line by line file reader which reads requested lines by {@link ByteBuffer}.
  * Lazily reads lines and almost always uses only 32KB of memory.
- * Uses additional memory only in case of lines that are greater than 32768 characters).
+ * Uses additional memory only for lines that are greater than 32768 characters (logs these allocations).
  * Detects lines that terminated by any one of a line feed ('\n'), a carriage return ('\r'),
  * a carriage return followed immediately by a line feed, or by reaching the end-of-file.
  * Supported charsets:
@@ -44,7 +44,7 @@ public class LineReader implements Publisher<ByteBuffer> {
      * {@link NoSuchLineCountException} will be thrown, also throws
      * {@link IllegalArgumentException} on negative values of requests.
      * Invokes {@link Subscriber#onNext(Object)} with a line which is placed from
-     * position (inclusive) to limit, in case of empty files this method is never invoked.
+     * position to limit (exclusive), in case of empty files this method is never invoked.
      * Warnings: bytes of each line exist only inside invoked body of
      * {@link Subscriber#onNext(Object)}, do not change bytes after limit position (inclusive).
      *
@@ -53,11 +53,11 @@ public class LineReader implements Publisher<ByteBuffer> {
      */
     @Override
     public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
-        try (final ParseRequest r = new ParseRequest(subscriber)) {
+        try (final ParseRequest r = new ParseRequest(path, subscriber)) {
             subscriber.onSubscribe(r);
 
             if (r.isActive()) {
-                final FileReader reader = new FileReader(path);
+                final FileReader reader = new FileReader();
                 final LineParser parser = new LineParser(r);
                 reader.subscribe(parser);
             }
@@ -100,13 +100,14 @@ public class LineReader implements Publisher<ByteBuffer> {
          */
         @Override
         public void onSubscribe(Subscription s) {
+            ((FileReader.ReadSubscription) s).setPath(request.path);
             ((FileReader.ReadSubscription) s).setAllocator(new MemoryAllocator());
             s.request(Long.MAX_VALUE);
             interrupter = s::cancel;
         }
 
         /**
-         * Parses file content into lines and sends
+         * Parses a file content into lines and sends
          * them to the {@link ParseRequest#subscriber}.
          * Between invocations saves start of last line at mark position.
          * Subscription cancellation stops file reading and
@@ -188,9 +189,11 @@ public class LineReader implements Publisher<ByteBuffer> {
         private boolean unbounded;
         private boolean interrupted;
 
+        private final Path path;
         private final Subscriber<? super ByteBuffer> subscriber;
 
-        private ParseRequest(Subscriber<? super ByteBuffer> subscriber) {
+        private ParseRequest(Path path, Subscriber<? super ByteBuffer> subscriber) {
+            this.path = path;
             this.subscriber = subscriber;
         }
 
@@ -240,7 +243,7 @@ public class LineReader implements Publisher<ByteBuffer> {
     /**
      * Allocates memory by 4096-byte regions for file reading,
      * keeps bytes reserved by LineParser. When general memory capacity isn't enough
-     * it tries to do compression and reuse, otherwise it will use
+     * it tries to do compression and reusing, otherwise it will use
      * as much memory as needed with attempts to use general memory again.
      *
      * @author Alexey Zhytnik
@@ -261,8 +264,8 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
 
         /**
-         * Returns a ByteBuffer with clean bytes from position (inclusive) to limit.
-         * Between invokes keeps previously returned bytes from mark (inclusive) to limit,
+         * Returns a ByteBuffer with clean bytes from position to limit (exclusive).
+         * Between invokes keeps previously returned bytes from mark to limit (exclusive),
          * but their place in memory and itself memory could be changed.
          *
          * @return a ByteBuffer which contains 4096 clean bytes for file reading.

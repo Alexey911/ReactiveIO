@@ -9,6 +9,7 @@ import org.junit.rules.TemporaryFolder;
 import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -39,14 +40,15 @@ public class FileReaderTest {
     @Before
     public void setUp() throws Exception {
         file = files.newFile();
-        reader = new FileReader(file.toPath());
-        subscriber = new ReadAssertionSubscriber();
+        reader = new FileReader();
+        subscriber = new ReadAssertionSubscriber(file.toPath());
         preparedChunks = new ArrayList<>();
     }
 
     @Test
     public void failsOnWrongResources() {
         file.delete();
+        subscriber.request = 2 * 4096;
         reader.subscribe(subscriber.asExpected(NoSuchFileException.class));
     }
 
@@ -63,7 +65,7 @@ public class FileReaderTest {
     }
 
     @Test
-    public void lazilyUsesMemory() {
+    public void lazilyUsesResources() {
         subscriber.allocator = () -> null;
         reader.subscribe(subscriber);
     }
@@ -138,12 +140,18 @@ public class FileReaderTest {
 
     static class ReadAssertionSubscriber extends BaseAssertionSubscriber<ByteBuffer, byte[]> {
 
+        final Path path;
         Supplier<ByteBuffer> allocator = new LineReader.MemoryAllocator();
+
+        private ReadAssertionSubscriber(Path path) {
+            this.path = path;
+        }
 
         @Override
         public void onSubscribe(Flow.Subscription s) {
             super.onSubscribe(s);
 
+            ((FileReader.ReadSubscription) s).setPath(path);
             ((FileReader.ReadSubscription) s).setAllocator(allocator);
             doRequest();
         }

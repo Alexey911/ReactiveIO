@@ -19,22 +19,17 @@ import java.util.function.Supplier;
  */
 public class FileReader implements Publisher<ByteBuffer> {
 
-    private final Path path;
-
     /**
-     * Constructs a FileReader associated with the file.
-     *
-     * @param path the path to file for reading
+     * Constructs a FileReader.
      */
-    public FileReader(Path path) {
-        this.path = path;
+    public FileReader() {
     }
 
     /**
      * Reads the file. Fails fast on any {@link IOException}.
      * Reads file content by ByteBuffers provided by custom memory allocator until
      * requested byte count is read. Invokes {@link Subscriber#onNext(Object)}
-     * only with content which is placed from position (inclusive) to limit,
+     * only with content which is placed from position to limit (exclusive),
      * never invokes {@link Subscriber#onNext(Object)} without file content.
      * Warning: the file content should not be modified during subscription,
      * otherwise the result of the execution is undefined.
@@ -44,7 +39,7 @@ public class FileReader implements Publisher<ByteBuffer> {
      */
     @Override
     public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
-        try (final ReadRequest r = new ReadRequest(path, subscriber)) {
+        try (final ReadRequest r = new ReadRequest(subscriber)) {
             subscriber.onSubscribe(r);
 
             if (r.isActive()) r.tryInitialize();
@@ -72,17 +67,24 @@ public class FileReader implements Publisher<ByteBuffer> {
     public interface ReadSubscription extends Subscription {
 
         /**
+         * Installs a path to file for reading.
+         *
+         * @param path the path to file
+         */
+        void setPath(Path path);
+
+        /**
          * Installs memory allocator which provides a memory for file reading.
          * Each invocation of memory allocator should return a ByteBuffer whose bytes
-         * from position (inclusive) to limit will be used for writing file content,
-         * but not all that bytes will be really used and limit position could be decreased.
+         * from position to limit (exclusive) will be used for writing file content,
+         * but not all that bytes could be used, limit position could be decreased.
          *
          * @param allocator the memory allocator
          */
         void setAllocator(Supplier<ByteBuffer> allocator);
 
         /**
-         * Adds bytes for reading. Needs installed memory allocator,
+         * Adds bytes for reading. Needs installed path and memory allocator,
          * otherwise throws {@link IllegalStateException}.
          * A value of {@code Long.MAX_VALUE} is request to read all file,
          * in other cases if requested byte count is negative or greater
@@ -106,25 +108,31 @@ public class FileReader implements Publisher<ByteBuffer> {
         private long limit;
         private long position;
         private boolean interrupted;
+
+        private Path path;
         private FileChannel resource;
         private Supplier<ByteBuffer> allocator;
 
-        private final Path path;
         private final Subscriber subscriber;
 
-        private ReadRequest(Path path, Subscriber subscriber) {
-            this.path = path;
+        private ReadRequest(Subscriber subscriber) {
             this.max = Long.MAX_VALUE;
             this.subscriber = subscriber;
         }
 
         private void tryInitialize() throws IOException {
+            final long firstRequestedBytes = limit;
+
             resource = FileChannel.open(path, StandardOpenOption.READ);
             max = resource.size();
 
-            long requestedBytes = limit;
             limit = 0;
-            request(requestedBytes);
+            request(firstRequestedBytes);
+        }
+
+        @Override
+        public void setPath(Path path) {
+            this.path = path;
         }
 
         @Override
@@ -146,8 +154,8 @@ public class FileReader implements Publisher<ByteBuffer> {
 
         @Override
         public void request(long bytes) {
-            if (allocator == null) {
-                onError(new IllegalStateException("Memory allocator isn't installed!"));
+            if (path == null || allocator == null) {
+                onError(new IllegalStateException("Both Path and Memory allocator should be installed!"));
             } else if (bytes == Long.MAX_VALUE) {
                 limit = max;
             } else if (bytes >= 0 && Math.addExact(limit, bytes) <= max) {
@@ -176,7 +184,6 @@ public class FileReader implements Publisher<ByteBuffer> {
                     if (!interrupted) onError(e);
                 }
             }
-
             if (!interrupted && position == limit) {
                 subscriber.onComplete();
             }
