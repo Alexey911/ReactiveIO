@@ -1,6 +1,5 @@
 package com.zhytnik.reactive.io;
 
-import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -53,7 +52,8 @@ public class LineReader implements Publisher<ByteBuffer> {
      */
     @Override
     public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
-        try (final ParseRequest r = new ParseRequest(path, subscriber)) {
+        try {
+            final ParseRequest r = new ParseRequest(path, subscriber);
             subscriber.onSubscribe(r);
 
             if (r.isActive()) {
@@ -61,7 +61,8 @@ public class LineReader implements Publisher<ByteBuffer> {
                 final LineParser parser = new LineParser(r);
                 reader.subscribe(parser);
             }
-        } catch (Exception e) {
+            r.complete();
+        } catch (Throwable e) {
             subscriber.onError(e);
         }
     }
@@ -183,7 +184,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
     }
 
-    private static final class ParseRequest implements Subscription, Closeable {
+    private static final class ParseRequest implements Subscription {
 
         private long remain;
         private boolean unbounded;
@@ -228,8 +229,7 @@ public class LineReader implements Publisher<ByteBuffer> {
             interrupted = true;
         }
 
-        @Override
-        public void close() {
+        private void complete() {
             if (interrupted) return;
 
             if (unbounded || remain == 0) {

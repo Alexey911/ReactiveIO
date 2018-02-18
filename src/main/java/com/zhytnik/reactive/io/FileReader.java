@@ -123,10 +123,12 @@ public class FileReader implements Publisher<ByteBuffer> {
         private void tryInitialize() throws IOException {
             final long firstRequestedBytes = limit;
 
+            interrupted = true;
             resource = FileChannel.open(path, StandardOpenOption.READ);
             max = resource.size();
 
             limit = 0;
+            interrupted = false;
             request(firstRequestedBytes);
         }
 
