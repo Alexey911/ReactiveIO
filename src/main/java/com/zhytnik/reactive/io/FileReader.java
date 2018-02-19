@@ -27,7 +27,7 @@ import java.util.concurrent.Flow.Subscription;
 import java.util.function.Supplier;
 
 /**
- * A file reader which reads requested bytes of files by {@link ByteBuffer}.
+ * A file reader which reads requested bytes of a file by {@link ByteBuffer}.
  * Needs custom memory provider {@link ReadSubscription#setAllocator(Supplier)}.
  *
  * @author Alexey Zhytnik

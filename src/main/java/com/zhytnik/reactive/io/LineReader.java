@@ -58,7 +58,7 @@ public final class LineReader implements Publisher<ByteBuffer> {
      * {@link NoSuchLineCountException} will be thrown, also throws
      * {@link IllegalArgumentException} on negative values of requests.
      * Invokes {@link Subscriber#onNext(Object)} with a line which is placed from
-     * position to limit (exclusive), in case of empty files this method is never invoked.
+     * position to limit (exclusive), in case of an empty file this method is never invoked.
      * Warnings: bytes of each line exist only inside invoked body of
      * {@link Subscriber#onNext(Object)}, do not change bytes after limit position (inclusive).
      *
@@ -123,7 +123,7 @@ public final class LineReader implements Publisher<ByteBuffer> {
          * them to the {@link ParseRequest#subscriber}.
          * Between invocations saves start of last line at mark position.
          * Subscription cancellation stops file reading and
-         * produces releasing used resources.
+         * produces releasing of used resources.
          *
          * @param chunk a file content from {@link FileReader}
          */
