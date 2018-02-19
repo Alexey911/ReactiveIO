@@ -22,7 +22,7 @@
 
     <groupId>com.zhytnik</groupId>
     <artifactId>reactive</artifactId>
-    <version>0.1-SNAPSHOT</version>
+    <version>0.1</version>
     <packaging>jar</packaging>
 
     <name>ReactiveIO</name>
