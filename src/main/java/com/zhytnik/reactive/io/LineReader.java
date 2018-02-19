@@ -221,7 +221,7 @@ public final class LineReader implements Publisher<ByteBuffer> {
             } else if (lines >= 0) {
                 remain += lines;
             } else {
-                onError(new IllegalArgumentException("Requested line count should not be negative!"));
+                onError(new IllegalArgumentException("Requested " + lines + " lines!"));
             }
         }
 
@@ -306,7 +306,7 @@ public final class LineReader implements Publisher<ByteBuffer> {
 
         private boolean tryCompact(ByteBuffer memory) {
             if (memory.reset().position() >= PAGE_SIZE) {
-                compress(memory);
+                compact(memory);
                 return true;
             }
             return false;
@@ -316,7 +316,7 @@ public final class LineReader implements Publisher<ByteBuffer> {
             memory.position(to).limit(to + PAGE_SIZE);
         }
 
-        private void compress(ByteBuffer memory) {
+        private void compact(ByteBuffer memory) {
             final int payload = memory.limit() - memory.position();
 
             memory.compact();
@@ -329,13 +329,14 @@ public final class LineReader implements Publisher<ByteBuffer> {
         }
 
         private ByteBuffer trySwapToGeneral() {
-            if (temporal.limit() - temporal.reset().position() > (GENERAL_MEMORY_SIZE - PAGE_SIZE)) {
+            int payload = temporal.limit() - temporal.reset().position();
+            if (payload > (GENERAL_MEMORY_SIZE - PAGE_SIZE)) {
                 return temporal;
             }
             general.position(0);
             general.put(temporal);
             prepareForRead(general);
-            general.limit(temporal.limit() - temporal.reset().position());
+            general.limit(payload);
 
             temporal = null;
             return general;
@@ -349,7 +350,7 @@ public final class LineReader implements Publisher<ByteBuffer> {
         private ByteBuffer swapToTemporal(ByteBuffer memory) {
             Logger.getLogger("MemoryAllocator").warning("Using additional memory!");
 
-            final int payload = memory.capacity() - memory.position();
+            final int payload = memory.limit() - memory.position();
 
             final ByteBuffer target = ByteBuffer
                     .allocate(2 * memory.capacity())
