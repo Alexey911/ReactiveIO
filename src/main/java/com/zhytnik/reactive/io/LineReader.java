@@ -22,7 +22,7 @@ import java.util.logging.Logger;
  *
  * @author Alexey Zhytnik
  */
-public class LineReader implements Publisher<ByteBuffer> {
+public final class LineReader implements Publisher<ByteBuffer> {
 
     private final Path path;
 
@@ -52,8 +52,7 @@ public class LineReader implements Publisher<ByteBuffer> {
      */
     @Override
     public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
-        try {
-            final ParseRequest r = new ParseRequest(path, subscriber);
+        try (final ParseRequest r = new ParseRequest(path, subscriber)) {
             subscriber.onSubscribe(r);
 
             if (r.isActive()) {
@@ -61,9 +60,6 @@ public class LineReader implements Publisher<ByteBuffer> {
                 final LineParser parser = new LineParser(r);
                 reader.subscribe(parser);
             }
-            r.complete();
-        } catch (Throwable e) {
-            subscriber.onError(e);
         }
     }
 
@@ -184,7 +180,7 @@ public class LineReader implements Publisher<ByteBuffer> {
         }
     }
 
-    private static final class ParseRequest implements Subscription {
+    private static final class ParseRequest implements Subscription, AutoCloseable {
 
         private long remain;
         private boolean unbounded;
@@ -208,7 +204,7 @@ public class LineReader implements Publisher<ByteBuffer> {
                 remain = 0;
                 unbounded = true;
             } else if (lines >= 0) {
-                remain = Math.addExact(remain, lines);
+                remain += lines;
             } else {
                 onError(new IllegalArgumentException("Requested line count should not be negative!"));
             }
@@ -229,7 +225,8 @@ public class LineReader implements Publisher<ByteBuffer> {
             interrupted = true;
         }
 
-        private void complete() {
+        @Override
+        public void close() {
             if (interrupted) return;
 
             if (unbounded || remain == 0) {

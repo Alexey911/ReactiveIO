@@ -17,7 +17,7 @@ import java.util.function.Supplier;
  *
  * @author Alexey Zhytnik
  */
-public class FileReader implements Publisher<ByteBuffer> {
+public final class FileReader implements Publisher<ByteBuffer> {
 
     /**
      * Constructs a FileReader.
@@ -158,9 +158,11 @@ public class FileReader implements Publisher<ByteBuffer> {
         public void request(long bytes) {
             if (path == null || allocator == null) {
                 onError(new IllegalStateException("Both Path and Memory allocator should be installed!"));
+            } else if (bytes < 0) {
+                onError(new IllegalArgumentException("Requested " + bytes + " bytes!"));
             } else if (bytes == Long.MAX_VALUE) {
                 limit = max;
-            } else if (bytes >= 0 && Math.addExact(limit, bytes) <= max) {
+            } else if (limit + bytes <= max) {
                 limit += bytes;
             } else {
                 onError(new IllegalArgumentException(path + " contains only " + max + " bytes!"));
