@@ -22,7 +22,6 @@ import java.util.concurrent.Flow.Subscription;
 
 /**
  * @author Alexey Zhytnik
- * @since 31.01.2018
  */
 public abstract class BaseAssertionSubscriber<T, R> implements Subscriber<T> {
 
@@ -97,6 +96,10 @@ public abstract class BaseAssertionSubscriber<T, R> implements Subscriber<T> {
     public void unsubscribe() {
         subscription.cancel();
         cancelled = true;
+    }
+
+    public boolean isFailed() {
+        return failed;
     }
 
     public void doRequest() {

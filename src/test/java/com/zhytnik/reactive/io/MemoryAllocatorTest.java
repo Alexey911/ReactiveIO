@@ -24,7 +24,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @author Alexey Zhytnik
- * @since 30-Jan-18
  */
 public class MemoryAllocatorTest {
 
@@ -38,6 +37,13 @@ public class MemoryAllocatorTest {
     @Test
     public void alwaysAllocatesByPagesOf4KB() {
         final ByteBuffer memory = allocator.get();
+
+        assertThat(memory.position() + 4096).isEqualTo(memory.limit());
+
+        allocator.get();
+        allocator.get();
+        allocator.get();
+        allocator.get();
 
         assertThat(memory.position() + 4096).isEqualTo(memory.limit());
     }
@@ -97,8 +103,8 @@ public class MemoryAllocatorTest {
     }
 
     @Test
-    public void triesToDoSwapWhenGeneralMemoryLimitIsReached() {
-        allocator.get();
+    public void doesSwapWhenGeneralMemoryIsOver() {
+        allocator.get().position(1).mark();
 
         allocator.get().put((byte) 77);
 
@@ -111,15 +117,15 @@ public class MemoryAllocatorTest {
 
         final ByteBuffer swapped = allocator.get();
 
-        assertThat(swapped.position()).isEqualTo(8 * 4096);
-        assertThat(swapped.limit()).isEqualTo(8 * 4096 + 4096);
+        assertThat(swapped.position()).isEqualTo(8 * 4096 - 1);
+        assertThat(swapped.limit()).isEqualTo(8 * 4096 + 4096 - 1);
         assertThat(swapped.reset().position()).isEqualTo(0);
-        assertThat(swapped.get(4096)).isEqualTo((byte) 77);
+        assertThat(swapped.get(4096 - 1)).isEqualTo((byte) 77);
         assertThat(swapped.capacity()).isGreaterThanOrEqualTo(9 * 4096);
     }
 
     @Test
-    public void alwaysTriesToUseGeneralMemory() {
+    public void alwaysTriesToReuseMemory() {
         final ByteBuffer general = allocator.get();
 
         allocator
@@ -143,8 +149,9 @@ public class MemoryAllocatorTest {
         assertThat(compacted.get()).isEqualTo((byte) 9);
 
         final ByteBuffer temporal = allocator.get();
-
         assertThat(temporal).isNotEqualTo(general);
+
+        assertThat(allocator.get()).isEqualTo(temporal);
         temporal.position(temporal.limit() - 1).mark().put((byte) 7);
 
         final ByteBuffer swapped = allocator.get();

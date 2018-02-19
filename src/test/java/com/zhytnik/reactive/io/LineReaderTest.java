@@ -35,7 +35,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @author Alexey Zhytnik
- * @since 25.01.2018
  */
 public class LineReaderTest {
 
@@ -57,6 +56,8 @@ public class LineReaderTest {
     public void checksRequests() {
         subscriber.request = -1;
         reader.subscribe(subscriber.asExpected(IllegalArgumentException.class));
+
+        assertThat(subscriber.isFailed()).isTrue();
     }
 
     @Test
@@ -70,8 +71,10 @@ public class LineReaderTest {
     @Test
     public void processesInternalErrors() {
         file.delete();
-
+        subscriber.request = MAX_VALUE;
         reader.subscribe(subscriber.asExpected(NoSuchFileException.class));
+
+        assertThat(subscriber.isFailed()).isTrue();
     }
 
     @Test
@@ -85,6 +88,8 @@ public class LineReaderTest {
 
         subscriber.request = 5;
         reader.subscribe(subscriber.asExpected(LineReader.NoSuchLineCountException.class));
+
+        assertThat(subscriber.isFailed()).isTrue();
     }
 
     @Test

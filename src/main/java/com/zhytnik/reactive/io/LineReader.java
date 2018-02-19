@@ -333,9 +333,8 @@ public final class LineReader implements Publisher<ByteBuffer> {
             if (payload > (GENERAL_MEMORY_SIZE - PAGE_SIZE)) {
                 return temporal;
             }
-            general.position(0);
-            general.put(temporal);
             prepareForRead(general);
+            general.put(temporal);
             general.limit(payload);
 
             temporal = null;

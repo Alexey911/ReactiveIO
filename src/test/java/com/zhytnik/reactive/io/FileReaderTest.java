@@ -40,7 +40,6 @@ import static org.assertj.core.api.Assertions.fail;
 
 /**
  * @author Alexey Zhytnik
- * @since 31.01.2018
  */
 public class FileReaderTest {
 
@@ -65,18 +64,40 @@ public class FileReaderTest {
         file.delete();
         subscriber.request = 2 * 4096;
         reader.subscribe(subscriber.asExpected(NoSuchFileException.class));
+
+        assertThat(subscriber.isFailed()).isTrue();
     }
 
     @Test
     public void failsOnMissedAllocator() {
         subscriber.allocator = null;
         reader.subscribe(subscriber.asExpected(IllegalStateException.class));
+
+        assertThat(subscriber.isFailed()).isTrue();
     }
 
     @Test
-    public void failsOnWrongRequests() {
+    public void failsOnMissedPath() {
+        subscriber.path = null;
+        reader.subscribe(subscriber.asExpected(IllegalStateException.class));
+
+        assertThat(subscriber.isFailed()).isTrue();
+    }
+
+    @Test
+    public void requestsShouldNotBeMoreThanFileLength() {
         subscriber.request = file.length() + 10;
         reader.subscribe(subscriber.asExpected(IllegalArgumentException.class));
+
+        assertThat(subscriber.isFailed()).isTrue();
+    }
+
+    @Test
+    public void failsOnNegativeRequests() {
+        subscriber.request = -10;
+        reader.subscribe(subscriber.asExpected(IllegalArgumentException.class));
+
+        assertThat(subscriber.isFailed()).isTrue();
     }
 
     @Test
@@ -106,6 +127,7 @@ public class FileReaderTest {
                 .put((byte) 7)
                 .put((byte) 9);
 
+        subscriber.request = 2 * 4096;
         reader.subscribe(subscriber);
 
         assertThat(subscriber.allocator.get().reset().position()).isEqualTo(777);
@@ -115,8 +137,8 @@ public class FileReaderTest {
 
     @Test
     public void requestWithMaxLongIsWishToReadResourceFully() throws Exception {
-        subscriber.request = MAX_VALUE;
         addDataForRead(chunk4KB(), chunk4KB(), chunk4KB());
+        subscriber.request = MAX_VALUE;
         reader.subscribe(subscriber);
 
         assertThat(subscriber.items).hasSize(3);
@@ -129,6 +151,16 @@ public class FileReaderTest {
     public void readsEmptyResources() {
         subscriber.request = MAX_VALUE;
         reader.subscribe(subscriber);
+    }
+
+    @Test
+    public void supportsCancellationInRuntime() throws Exception {
+        addDataForRead(chunk4KB(), chunk4KB(), chunk4KB());
+        subscriber.inclusion = subscriber::unsubscribe;
+        subscriber.request = MAX_VALUE;
+        reader.subscribe(subscriber);
+
+        assertThat(subscriber.items).hasSize(1);
     }
 
     @After
@@ -155,7 +187,8 @@ public class FileReaderTest {
 
     static class ReadAssertionSubscriber extends BaseAssertionSubscriber<ByteBuffer, byte[]> {
 
-        final Path path;
+        Path path;
+        Runnable inclusion;
         Supplier<ByteBuffer> allocator = new LineReader.MemoryAllocator();
 
         private ReadAssertionSubscriber(Path path) {
@@ -177,6 +210,7 @@ public class FileReaderTest {
 
             assertThat(b).isNotNull();
             items.add(allocate(b.limit() - b.position()).put(b).array());
+            if (inclusion != null) inclusion.run();
         }
     }
 }
