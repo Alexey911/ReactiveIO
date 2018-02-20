@@ -1,10 +1,10 @@
 # ReactiveIO
-Reactive file readers for Java based on [NIO](https://en.wikipedia.org/wiki/New_I/O_(Java)) and [Flow API](https://docs.oracle.com/javase/9/docs/api/java/util/concurrent/Flow.html) that could be integrated with [Flux](https://projectreactor.io/docs/core/release/api/reactor/adapter/JdkFlowAdapter.html), [RxJava](https://github.com/akarnokd/RxJava2Jdk9Interop).
+Reactive file readers based on [NIO](https://en.wikipedia.org/wiki/New_I/O_(Java)) and [Flow API](https://docs.oracle.com/javase/9/docs/api/java/util/concurrent/Flow.html) that could be integrated with [Flux](https://projectreactor.io/docs/core/release/api/reactor/adapter/JdkFlowAdapter.html), [RxJava](https://github.com/akarnokd/RxJava2Jdk9Interop).
 
 [![Build Status](https://travis-ci.org/Alexey911/TravisTest.png?branch=master)](https://travis-ci.org/Alexey911/ReactiveIO)
 [![Coverage Status](https://coveralls.io/repos/github/Alexey911/ReactiveIO/badge.svg?branch=master)](https://coveralls.io/github/Alexey911/ReactiveIO?branch=master)
 
-[LineReader](https://github.com/Alexey911/ReactiveIO/blob/master/src/main/java/com/zhytnik/reactive/io/LineReader.java) reads lines by `ByteBuffers` and provides alternative for `Stream<String>` from [Files.lines(Path path)](https://docs.oracle.com/javase/9/docs/api/java/nio/file/Files.html#lines-java.nio.file.Path-). Almost always `LineReader` consumes only 32KB of heap memory and its consumption isn't depend on file's size (uses additional memory only for lines that are greater than 32768 characters). 
+[LineReader](https://github.com/Alexey911/ReactiveIO/blob/master/src/main/java/com/zhytnik/reactive/io/LineReader.java) provides alternative for `Stream<String>` from [Files.lines(Path path)](https://docs.oracle.com/javase/9/docs/api/java/nio/file/Files.html#lines-java.nio.file.Path-) and reads lines by `ByteBuffers`. Almost always `LineReader` consumes only 32KB of heap memory and its consumption isn't depend on file's size (uses additional memory only for lines that are greater than 32768 characters). 
 
 Also there's [FileReader](https://github.com/Alexey911/ReactiveIO/blob/master/src/main/java/com/zhytnik/reactive/io/FileReader.java) for simple reactive reading. 
 
@@ -50,7 +50,7 @@ new LineReader(Paths.get("resource.txt")).subscribe(new Flow.Subscriber<>() {
 ```
 
 ### ByteBuffer vs String
-When there's no need to process data in `String` representation or it's required to know only existance of a line (e.g. getting line count), using of `LineReader` gives significant speed up.
+When there's no need to process data via `String` representation or it's required to know only existance of a line (e.g. getting line count), using of `LineReader` gives significant speed up.
 
 On my machine ([Core i5-3317U](https://ark.intel.com/ru/products/65707/Intel-Core-i5-3317U-Processor-3M-Cache-up-to-2_60-GHz), Ubuntu 14.04, Oracle JDK 9.0.4) [getting line count](https://github.com/Alexey911/ReactiveIO/issues/5) from 8MB file took:
 - 12.625 ± 0.351 ms (by `LineReader`)
