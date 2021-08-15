@@ -1,7 +1,7 @@
 # ReactiveIO
 Reactive file readers based on [NIO](https://en.wikipedia.org/wiki/New_I/O_(Java)) and [Flow API](https://docs.oracle.com/javase/9/docs/api/java/util/concurrent/Flow.html) that could be integrated with [Flux](https://projectreactor.io/docs/core/release/api/reactor/adapter/JdkFlowAdapter.html), [RxJava](https://github.com/akarnokd/RxJava2Jdk9Interop).
 
-[![Build Status](https://travis-ci.org/Alexey911/TravisTest.png?branch=master)](https://travis-ci.org/Alexey911/ReactiveIO)
+[![Build Status](https://travis-ci.org/Alexey911/ReactiveIO.png?branch=master)](https://travis-ci.org/Alexey911/ReactiveIO)
 [![Coverage Status](https://coveralls.io/repos/github/Alexey911/ReactiveIO/badge.svg?branch=master)](https://coveralls.io/github/Alexey911/ReactiveIO?branch=master)
 
 [LineReader](https://github.com/Alexey911/ReactiveIO/blob/master/src/main/java/com/zhytnik/reactive/io/LineReader.java) provides alternative for `Stream<String>` from [Files.lines(Path path)](https://docs.oracle.com/javase/9/docs/api/java/nio/file/Files.html#lines-java.nio.file.Path-) and reads lines by `ByteBuffers`. Almost always `LineReader` consumes only 32KB of heap memory and its consumption isn't depend on file's size (uses additional memory only for lines that are greater than 32768 characters). 
